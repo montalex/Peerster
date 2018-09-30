@@ -2,8 +2,10 @@ package gossiper
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/dedis/protobuf"
 	"github.com/montalex/Peerster/errors"
@@ -23,6 +25,7 @@ type Gossiper struct {
 	peersConn, clientConn *net.UDPConn
 	name                  string
 	knownPeers            []string
+	simple                bool
 }
 
 /*NewGossiper creates a new gossiper
@@ -32,7 +35,7 @@ name: the gossiper's name
 peers: slice of the known peers address of the form (IP:Port)
 Returns the gossiper
 */
-func NewGossiper(address, UIPort, name, peers string) *Gossiper {
+func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 	//Gossiper outside UDP listener
 	udpPeersAddr, err := net.ResolveUDPAddr("udp4", address)
 	errors.CheckErr(err, "Error when resolving UDP address: ", true)
@@ -52,6 +55,7 @@ func NewGossiper(address, UIPort, name, peers string) *Gossiper {
 		clientConn: udpClientConn,
 		name:       name,
 		knownPeers: strings.Split(peers, ","),
+		simple:     simple,
 	}
 }
 
@@ -66,17 +70,36 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 			msg := string(readBuffer[:size])
 			fmt.Println("CLIENT MESSAGE", msg)
 			fmt.Println("PEERS", strings.Join(gos.knownPeers, ","))
-			packet := messages.GossipPacket{Simple: &messages.SimpleMessage{
-				OriginalName:  gos.name,
-				RelayPeerAddr: gos.peersAddr.String(),
-				Contents:      msg}}
 
-			//Prepare packet to send
-			serializedPacket, err := protobuf.Encode(&packet)
-			errors.CheckErr(err, "Error when encoding packet: ", false)
+			//Prepare packet and send it
+			if gos.simple {
+				packet := messages.GossipPacket{Simple: &messages.SimpleMessage{
+					OriginalName:  gos.name,
+					RelayPeerAddr: gos.peersAddr.String(),
+					Contents:      msg}}
+				serializedPacket, err := protobuf.Encode(&packet)
+				errors.CheckErr(err, "Error when encoding packet: ", false)
 
-			//Transmit to all peers
-			gos.sendToAll(serializedPacket, []string{})
+				//Transmit to all peers
+				gos.sendToAll(serializedPacket, []string{})
+			} else {
+				packet := messages.GossipPacket{Rumor: &messages.RumorMessage{
+					Origin: gos.name,
+					ID:     1, //TODO: handle this ID
+					Text:   msg}}
+				serializedPacket, err := protobuf.Encode(&packet)
+				errors.CheckErr(err, "Error when encoding packet: ", false)
+
+				//Transmit to a random peer if at least one is known
+				//TODO: HANDLE WAITING TIME
+				if len(gos.knownPeers) == 0 {
+					fmt.Println("Error: could not retransmit message, I do not know any other peers!")
+				} else {
+					randomPeer := gos.knownPeers[randomSelect(len(gos.knownPeers))]
+					fmt.Println("MONGERING with", randomPeer)
+					gos.sendToPeer(serializedPacket, randomPeer)
+				}
+			}
 		}
 	}
 }
@@ -156,4 +179,9 @@ func contains(peers []string, p string) bool {
 		}
 	}
 	return false
+}
+
+func randomSelect(sliceLength int) int {
+	rand.Seed(time.Now().UnixNano())
+	return rand.Intn(sliceLength)
 }
