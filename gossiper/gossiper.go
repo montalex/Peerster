@@ -76,11 +76,7 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 			errors.CheckErr(err, "Error when encoding packet: ", false)
 
 			//Transmit to all peers
-			if len(gos.knownPeers) != 0 {
-				for _, peer := range gos.knownPeers {
-					gos.sendToPeer(serializedPacket, peer)
-				}
-			}
+			gos.sendToAll(serializedPacket, []string{})
 		}
 	}
 }
@@ -90,31 +86,36 @@ readBuffer: the byte buffer needed to read messages
 */
 func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 	for {
-		size, _, err := gos.peersConn.ReadFromUDP(readBuffer)
+		size, addr, err := gos.peersConn.ReadFromUDP(readBuffer)
 		errors.CheckErr(err, "Error when reading message: ", false)
 		if size != 0 {
 			var packet messages.GossipPacket
 			protobuf.Decode(readBuffer[:size], &packet)
-			nameOrigin, relayAddr, content := packet.ReadSimpleMessage()
-			fmt.Println("SIMPLE MESSAGE origin", nameOrigin, "from", relayAddr, "contents", content)
-			//Adds relay address if not contained already
-			if !contains(gos.knownPeers, relayAddr) {
-				gos.knownPeers = append(gos.knownPeers, relayAddr)
-			}
-			fmt.Println("PEERS ", strings.Join(gos.knownPeers, ","))
 
-			//Modify relay address & prepare packet to send
-			packet.Simple.RelayPeerAddr = gos.peersAddr.String()
-			serializedPacket, err := protobuf.Encode(&packet)
-			errors.CheckErr(err, "Error when encoding packet: ", false)
-
-			//Send to all peers except relay address
-			if len(gos.knownPeers) != 0 {
-				for _, peer := range gos.knownPeers {
-					if peer != relayAddr {
-						gos.sendToPeer(serializedPacket, peer)
-					}
+			//Check for Message type
+			if packet.Simple != nil {
+				nameOrigin, relayAddr, content := packet.ReadSimpleMessage()
+				fmt.Println("SIMPLE MESSAGE origin", nameOrigin, "from", relayAddr, "contents", content)
+				//Adds relay address if not contained already
+				if !contains(gos.knownPeers, relayAddr) {
+					gos.knownPeers = append(gos.knownPeers, relayAddr)
 				}
+				fmt.Println("PEERS ", strings.Join(gos.knownPeers, ","))
+
+				//Modify relay address & prepare packet to send
+				packet.Simple.RelayPeerAddr = gos.peersAddr.String()
+				serializedPacket, err := protobuf.Encode(&packet)
+				errors.CheckErr(err, "Error when encoding packet: ", false)
+
+				//Send to all peers except relay address
+				gos.sendToAll(serializedPacket, []string{relayAddr})
+
+			} else if packet.Rumor != nil {
+
+			} else if packet.Status != nil {
+
+			} else { //Should never happen!
+				fmt.Println("Error: MESSAGE FORM UNKNOWN. Sent by", addr.String())
 			}
 		}
 	}
@@ -128,6 +129,20 @@ func (gos *Gossiper) sendToPeer(packet []byte, peer string) {
 	peerAddr, err := net.ResolveUDPAddr("udp4", peer)
 	errors.CheckErr(err, "Error when resolving peer UDP addr: ", false)
 	gos.peersConn.WriteToUDP(packet, peerAddr)
+}
+
+/*sendToAll sends a packet to all peers known by the gossiper, can include an exception
+packet: the packet to send
+exception: a slice of peers to omit in the transmission (if none set to "")
+*/
+func (gos *Gossiper) sendToAll(packet []byte, exception []string) {
+	if len(gos.knownPeers) != 0 {
+		for _, peer := range gos.knownPeers {
+			if !contains(exception, peer) {
+				gos.sendToPeer(packet, peer)
+			}
+		}
+	}
 }
 
 /*contains checks if the given string is contained in the given slice

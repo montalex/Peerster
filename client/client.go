@@ -10,7 +10,6 @@ import (
 func main() {
 	var UIPort = flag.String("UIPort", "4242", "Port for UI client")
 	var msg = flag.String("msg", "", "message to be sent")
-
 	flag.Parse()
 
 	destAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+*UIPort)

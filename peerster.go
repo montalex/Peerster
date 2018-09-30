@@ -12,11 +12,12 @@ func main() {
 	var name = flag.String("name", "Alexis", "name of the gossiper")
 	var peers = flag.String("peers", "", "comma separated list of peers of the form ip:port")
 	var simple = flag.Bool("simple", true, "run gossiper in simple broadcast mode")
-
 	flag.Parse()
-	if *simple {
 
+	//Used to avoid error "Unsed variable simple"
+	if *simple {
 	}
+
 	gos := gossiper.NewGossiper(*gossipAddr, *UIPort, *name, *peers)
 	clientReadBuffer := make([]byte, 4096)
 	peersReadBuffer := make([]byte, 4096)
