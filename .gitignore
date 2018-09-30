@@ -12,7 +12,7 @@
 *.out
 
 # MacOS files
-.DS_Store
+*.DS_Store
 
 # Hide tests
-.sh
+*.sh
