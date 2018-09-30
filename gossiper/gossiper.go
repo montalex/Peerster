@@ -14,8 +14,8 @@ import (
 type Gossiper struct {
 	peersAddr, clientAddr *net.UDPAddr
 	peersConn, clientConn *net.UDPConn
-	Name                  string
-	KnownPeers            []string
+	name                  string
+	knownPeers            []string
 }
 
 //NewGossiper, create a new gossiper or exit if there is an error
@@ -37,8 +37,8 @@ func NewGossiper(address, UIPort, name, peers string) *Gossiper {
 		clientAddr: udpClientAddr,
 		peersConn:  udpPeersConn,
 		clientConn: udpClientConn,
-		Name:       name,
-		KnownPeers: strings.Split(peers, ","),
+		name:       name,
+		knownPeers: strings.Split(peers, ","),
 	}
 }
 
@@ -50,9 +50,9 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 		if size != 0 {
 			msg := string(readBuffer[:size])
 			fmt.Println("CLIENT MESSAGE", msg)
-			fmt.Println("PEERS", strings.Join(gos.KnownPeers, ","))
+			fmt.Println("PEERS", strings.Join(gos.knownPeers, ","))
 			packet := messages.GossipPacket{Simple: &messages.SimpleMessage{
-				OriginalName:  gos.Name,
+				OriginalName:  gos.name,
 				RelayPeerAddr: gos.peersAddr.String(),
 				Contents:      msg}}
 
@@ -61,8 +61,8 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 			errors.CheckErr(err, "Error when encoding packet: ", false)
 
 			//Transmit to all peers
-			if len(gos.KnownPeers) != 0 {
-				for _, peer := range gos.KnownPeers {
+			if len(gos.knownPeers) != 0 {
+				for _, peer := range gos.knownPeers {
 					gos.sendToPeer(serializedPacket, peer)
 				}
 			}
@@ -81,10 +81,10 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 			nameOrigin, relayAddr, content := packet.ReadMessage()
 			fmt.Println("SIMPLE MESSAGE origin", nameOrigin, "from", relayAddr, "contents", content)
 			//Adds relay address if not contained already
-			if !contains(gos.KnownPeers, relayAddr) {
-				gos.KnownPeers = append(gos.KnownPeers, relayAddr)
+			if !contains(gos.knownPeers, relayAddr) {
+				gos.knownPeers = append(gos.knownPeers, relayAddr)
 			}
-			fmt.Println("PEERS ", strings.Join(gos.KnownPeers, ","))
+			fmt.Println("PEERS ", strings.Join(gos.knownPeers, ","))
 
 			//Modify relay address & prepare packet to send
 			packet.Simple.RelayPeerAddr = gos.peersAddr.String()
@@ -92,8 +92,8 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 			errors.CheckErr(err, "Error when encoding packet: ", false)
 
 			//Send to all peers except relay address
-			if len(gos.KnownPeers) != 0 {
-				for _, peer := range gos.KnownPeers {
+			if len(gos.knownPeers) != 0 {
+				for _, peer := range gos.knownPeers {
 					if peer != relayAddr {
 						gos.sendToPeer(serializedPacket, peer)
 					}
