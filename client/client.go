@@ -16,7 +16,7 @@ func main() {
 	destAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+*UIPort)
 	errors.CheckErr(err, "Error when resolving UDP dest address: ", true)
 
-	myAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:4241")
+	myAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:4284")
 	errors.CheckErr(err, "Error when resolving UDP local address: ", true)
 
 	udpConn, err := net.DialUDP("udp", myAddr, destAddr)

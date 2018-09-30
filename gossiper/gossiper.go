@@ -49,8 +49,8 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 		errors.CheckErr(err, "Error when reading message: ", false)
 		if size != 0 {
 			msg := string(readBuffer[:size])
-			fmt.Println("CLIENT MESSAGE ", msg)
-			fmt.Println("PEERS ", strings.Join(gos.KnownPeers, ","))
+			fmt.Println("CLIENT MESSAGE", msg)
+			fmt.Println("PEERS", strings.Join(gos.KnownPeers, ","))
 			packet := messages.GossipPacket{Simple: &messages.SimpleMessage{
 				OriginalName:  gos.Name,
 				RelayPeerAddr: gos.peersAddr.String(),
@@ -61,8 +61,10 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 			errors.CheckErr(err, "Error when encoding packet: ", false)
 
 			//Transmit to all peers
-			for _, peer := range gos.KnownPeers {
-				gos.sendToPeer(serializedPacket, peer)
+			if len(gos.KnownPeers) != 0 {
+				for _, peer := range gos.KnownPeers {
+					gos.sendToPeer(serializedPacket, peer)
+				}
 			}
 		}
 	}
@@ -77,7 +79,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 			var packet messages.GossipPacket
 			protobuf.Decode(readBuffer[:size], &packet)
 			nameOrigin, relayAddr, content := packet.ReadMessage()
-			fmt.Println("SIMPLE MESSAGE origin ", nameOrigin, " from ", relayAddr, " contents ", content)
+			fmt.Println("SIMPLE MESSAGE origin", nameOrigin, "from", relayAddr, "contents", content)
 			//Adds relay address if not contained already
 			if !contains(gos.KnownPeers, relayAddr) {
 				gos.KnownPeers = append(gos.KnownPeers, relayAddr)
@@ -90,9 +92,11 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 			errors.CheckErr(err, "Error when encoding packet: ", false)
 
 			//Send to all peers except relay address
-			for _, peer := range gos.KnownPeers {
-				if peer != relayAddr {
-					gos.sendToPeer(serializedPacket, peer)
+			if len(gos.KnownPeers) != 0 {
+				for _, peer := range gos.KnownPeers {
+					if peer != relayAddr {
+						gos.sendToPeer(serializedPacket, peer)
+					}
 				}
 			}
 		}
