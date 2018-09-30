@@ -10,7 +10,7 @@ import (
 	"github.com/montalex/Peerster/messages"
 )
 
-//Gossiper, the gossiper entity
+//Gossiper entity
 type Gossiper struct {
 	peersAddr, clientAddr *net.UDPAddr
 	peersConn, clientConn *net.UDPConn
@@ -18,7 +18,7 @@ type Gossiper struct {
 	knownPeers            []string
 }
 
-//NewGossiper, create a new gossiper or exit if there is an error
+//NewGossiper creates a new gossiper
 func NewGossiper(address, UIPort, name, peers string) *Gossiper {
 	//Gossiper outside UDP listener
 	udpPeersAddr, err := net.ResolveUDPAddr("udp4", address)
@@ -42,7 +42,7 @@ func NewGossiper(address, UIPort, name, peers string) *Gossiper {
 	}
 }
 
-//ListenClient, listen for UDP packets sent from client
+//ListenClient listens for UDP packets sent from client
 func (gos *Gossiper) ListenClient(readBuffer []byte) {
 	for {
 		size, _, err := gos.clientConn.ReadFromUDP(readBuffer)
@@ -70,7 +70,7 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 	}
 }
 
-//ListenPeers listen for UDP packets sent from other peers
+//ListenPeers listens for UDP packets sent from other peers
 func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 	for {
 		size, _, err := gos.peersConn.ReadFromUDP(readBuffer)
@@ -103,14 +103,14 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 	}
 }
 
-//sendToPeer, sends a packet to a given peer
+//sendToPeer sends a packet to a given peer
 func (gos *Gossiper) sendToPeer(packet []byte, peer string) {
 	peerAddr, err := net.ResolveUDPAddr("udp4", peer)
 	errors.CheckErr(err, "Error when resolving peer UDP addr: ", false)
 	gos.peersConn.WriteToUDP(packet, peerAddr)
 }
 
-//contains, check if the given string is contained in the given slice
+//contains checks if the given string is contained in the given slice
 func contains(peers []string, p string) bool {
 	for _, test := range peers {
 		if test == p {
