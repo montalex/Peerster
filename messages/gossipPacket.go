@@ -1,5 +1,7 @@
 package messages
 
+import "strconv"
+
 /*GossipPacket is only type of packets sent between peers
 !! Can only send one of the following at a time !!
 
@@ -53,7 +55,25 @@ type PeerStatus struct {
 
 /*ReadSimpleMessage reads the simple message from a GossipPacket
 Returns the original name, the relay peer's address and the content*/
-func (packet GossipPacket) ReadSimpleMessage() (string, string, string) {
+func (packet *GossipPacket) ReadSimpleMessage() (string, string, string) {
 	simple := *packet.Simple
 	return simple.OriginalName, simple.RelayPeerAddr, simple.Contents
+}
+
+/*ReadRumorMessage reads the rumor message from a GossipPacket
+Returns the original name, the ID and the content*/
+func (packet *GossipPacket) ReadRumorMessage() (string, string, string) {
+	rumor := *packet.Rumor
+	return rumor.Origin, string(rumor.ID), rumor.Text
+}
+
+/*ReadStatusMessage reads the status message from a GossipPacket
+Returns the pairs of peer-nextID*/
+func (packet *GossipPacket) ReadStatusMessage() string {
+	var statusString = ""
+	status := *packet.Status
+	for _, s := range status.Want {
+		statusString = statusString + "peer " + s.Identifier + " nextID " + strconv.FormatUint(uint64(s.NextID), 10) + " "
+	}
+	return statusString[:len(statusString)-1]
 }
