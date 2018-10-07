@@ -20,6 +20,11 @@ peersConn: the gossiping side's UDP connection
 clientConn: the client side's UDP connection
 name: the gossiper's name
 knownPeers: slice of the known peers address of the form (IP:Port)
+simple: run gossiper in simple mode
+want: the gossiper's peer status
+timers: a synchronized map of timers in order to timeout after a msg is send to a peer
+pastMsg: the list of messages recieved and sent
+lastSent: the last msg sent to each peer
 */
 type Gossiper struct {
 	peersAddr, clientAddr *net.UDPAddr
@@ -27,10 +32,10 @@ type Gossiper struct {
 	name                  string
 	knownPeers            []string
 	simple                bool
-	id                    uint32
-	want                  map[string]messages.PeerStatus
-	timers                sync.Map
+	want                  map[string]*messages.PeerStatus
+	timers                *sync.Map
 	pastMsg               messages.PastMessages
+	lastSent              map[string]*messages.RumorMessage
 }
 
 /*NewGossiper creates a new gossiper
@@ -54,13 +59,15 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 	udpClientConn, err := net.ListenUDP("udp4", udpClientAddr)
 	errors.CheckErr(err, "Error with UDP connection: ", true)
 
-	peersList := strings.Split(peers, ",")
-	/*var initWant = make([]messages.PeerStatus, len(peersList))
-	for _, p := range peersList {
-		initWant = append(initWant, messages.PeerStatus{
-			Identifier: p,
-			NextID:     1})
-	}*/
+	peersList := make([]string, 0)
+	if peers != "" {
+		peersList = strings.Split(peers, ",")
+	}
+	var initWant = make(map[string]*messages.PeerStatus)
+	initWant[name] = &messages.PeerStatus{
+		Identifier: name,
+		NextID:     1,
+	}
 
 	return &Gossiper{
 		peersAddr:  udpPeersAddr,
@@ -70,8 +77,10 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 		name:       name,
 		knownPeers: peersList,
 		simple:     simple,
-		id:         uint32(1),
-		want:       make(map[string]messages.PeerStatus),
+		want:       initWant,
+		timers:     &sync.Map{},
+		pastMsg:    messages.PastMessages{MessagesList: make(map[string][]*messages.RumorMessage)},
+		lastSent:   make(map[string]*messages.RumorMessage),
 	}
 }
 
@@ -102,16 +111,17 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				if len(gos.knownPeers) == 0 {
 					fmt.Println("Error: could not retransmit message, I do not know any other peers!")
 				} else {
-					packet := messages.GossipPacket{Rumor: &messages.RumorMessage{
+					rumor := messages.RumorMessage{
 						Origin: gos.name,
-						ID:     gos.id,
-						Text:   msg}}
-					serializedPacket, err := protobuf.Encode(&packet)
-					errors.CheckErr(err, "Error when encoding packet: ", false)
+						ID:     gos.want[gos.name].NextID,
+						Text:   msg}
+
+					//Add to past
+					gos.pastMsg.MessagesList[gos.name] = append(gos.pastMsg.MessagesList[gos.name], &rumor)
 
 					//Transmit to a random peer if at least one is known
-					gos.rumormongering(serializedPacket, true)
-					gos.id++
+					gos.rumormongering(&rumor, []string{}, true)
+					gos.want[gos.name].NextID++
 				}
 			}
 		}
@@ -148,56 +158,56 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				nameOrigin, id, content := packet.ReadRumorMessage()
 				fmt.Println("RUMOR origin", nameOrigin, "from", relayAddr, "ID", id, "contents", content)
 				gos.addPrintPeers(relayAddr)
-				gos.want[nameOrigin] = messages.PeerStatus{Identifier: nameOrigin, NextID: packet.Rumor.ID}
-				gos.pastMsg.MessagesList[nameOrigin] = append(gos.pastMsg.MessagesList[nameOrigin], packet.Rumor)
 
-				//Send status answer
-				wantSlice := []messages.PeerStatus{}
-				for _, p := range gos.want {
-					wantSlice = append(wantSlice, p)
+				//Checks if this peer is in the list already
+				if _, ok := gos.want[nameOrigin]; !ok {
+					gos.want[nameOrigin] = &messages.PeerStatus{Identifier: nameOrigin, NextID: uint32(1)}
 				}
-				packet := messages.GossipPacket{Status: &messages.StatusPacket{
-					Want: wantSlice}}
-				serializedPacket, err := protobuf.Encode(&packet)
-				errors.CheckErr(err, "Error when encoding packet: ", false)
-				gos.sendToPeer(serializedPacket, relayAddr)
+
+				//Checks if id is the one we need, otherwise drop msg.
+				//If already seen, no need to read it.
+				//If more recent then needed, we will recieve it later in order.
+				if id == gos.want[nameOrigin].NextID {
+					gos.want[nameOrigin].NextID++
+					gos.pastMsg.MessagesList[nameOrigin] = append(gos.pastMsg.MessagesList[nameOrigin], packet.Rumor)
+
+					//Send status answer
+					gos.sendStatus(relayAddr)
+
+					//Start rumormongering
+					gos.rumormongering(packet.Rumor, []string{relayAddr}, true)
+				}
+
 			} else if packet.Status != nil {
 				fmt.Println("STATUS from", relayAddr, packet.ReadStatusMessage())
 				gos.addPrintPeers(relayAddr)
 
 				//Checks if status recieved from waiting list
+				//TODO: Check if correct/needed.
 				timer, ok := gos.timers.Load(relayAddr)
 				if ok {
 					//Checks if timer was stopped or timed out if true status was recieved as an answer
 					if timer.(*time.Timer).Stop() {
-						//TODO: maybe need to move this
 						gos.timers.Delete(relayAddr)
 					}
 				}
 
 				//Compare with own status
-				var status = messages.PeerStatus{Identifier: "OK"}
-				for _, s := range gos.want {
-					for _, t := range packet.Status.Want {
-						if t.Identifier == s.Identifier {
-							if t.NextID > s.NextID {
-								status = t
-							} else if t.NextID < s.NextID {
-
-							}
-						}
-					}
-				}
-				if status.Identifier != "OK" {
-					//DO STUFF
-				} else {
-					fmt.Println("IN SYNC WITH", relayAddr)
-
-				}
+				gos.compareStatus(packet.Status.Want, relayAddr)
 			} else { //Should never happen!
 				fmt.Println("Error: MESSAGE FORM UNKNOWN. Sent by", relayAddr)
 			}
 		}
+	}
+}
+
+/*AntiEntropy makes sure everybody enventually gets all messages by sending a status message
+to a random peer every second*/
+func (gos *Gossiper) AntiEntropy() {
+	for {
+		time.Sleep(time.Second)
+		randomPeer := gos.knownPeers[rand.Int()%len(gos.knownPeers)]
+		gos.sendStatus(randomPeer)
 	}
 }
 
@@ -213,16 +223,32 @@ func (gos *Gossiper) sendToPeer(packet []byte, peer string) {
 
 /*sendToAll sends a packet to all peers known by the gossiper, can include an exception
 packet: the packet to send
-exception: a slice of peers to omit in the transmission (if none set to "")
+except: a slice of peers to omit in the transmission (if none is empty)
 */
-func (gos *Gossiper) sendToAll(packet []byte, exception []string) {
+func (gos *Gossiper) sendToAll(packet []byte, except []string) {
 	if len(gos.knownPeers) != 0 {
 		for _, peer := range gos.knownPeers {
-			if !contains(exception, peer) {
+			if !contains(except, peer) {
 				gos.sendToPeer(packet, peer)
 			}
 		}
 	}
+}
+
+/*sendToPeer sends a packet to a given peer
+peer: the peer's address of the form (IP:Port)
+*/
+func (gos *Gossiper) sendStatus(peer string) {
+	wantSlice := []messages.PeerStatus{}
+	for _, p := range gos.want {
+		wantSlice = append(wantSlice, *p)
+	}
+
+	packet := messages.GossipPacket{Status: &messages.StatusPacket{
+		Want: wantSlice}}
+	serializedPacket, err := protobuf.Encode(&packet)
+	errors.CheckErr(err, "Error when encoding packet: ", false)
+	gos.sendToPeer(serializedPacket, peer)
 }
 
 /*addPrintPeers adds relay address if not contained already and prints all known peers*/
@@ -236,26 +262,102 @@ func (gos *Gossiper) addPrintPeers(addr string) {
 
 /*rumormongering is a simple rumoring protocol
 msg: the message to send
+except: a slice of peers to omit in the transmission (if none is empty) of the form (IP:Port)
 first: set to true when starting a new rumor
 */
-func (gos *Gossiper) rumormongering(packet []byte, first bool) {
-	randomPeer := gos.knownPeers[rand.Int()%len(gos.knownPeers)]
-	if first {
-		fmt.Println("MONGERING with", randomPeer)
-	} else {
-		fmt.Println("FLIPPED COIN sending rumor to", randomPeer)
+func (gos *Gossiper) rumormongering(rumor *messages.RumorMessage, except []string, first bool) {
+	if len(except) < len(gos.knownPeers) {
+		randomPeer := gos.knownPeers[rand.Int()%len(gos.knownPeers)]
+		for contains(except, randomPeer) {
+			randomPeer = gos.knownPeers[rand.Int()%len(gos.knownPeers)]
+		}
+
+		packet := messages.GossipPacket{Rumor: rumor}
+		serializedPacket, err := protobuf.Encode(&packet)
+		errors.CheckErr(err, "Error when encoding packet: ", false)
+
+		if first {
+			fmt.Println("MONGERING with", randomPeer)
+		} else {
+			fmt.Println("FLIPPED COIN sending rumor to", randomPeer)
+		}
+
+		gos.sendToPeer(serializedPacket, randomPeer)
+		gos.lastSent[randomPeer] = rumor
+		timer := time.AfterFunc(time.Second, func() {
+			gos.timers.Delete(randomPeer)
+			if (rand.Int() % 2) == 0 {
+				gos.rumormongering(rumor, append(except, randomPeer), false)
+			}
+			return
+		})
+		gos.timers.Store(randomPeer, timer)
+	}
+}
+
+/*compareStatus compares the given status with the gossiper's status and send the appropriate message
+msgStatus: the status to compare with
+peer: the peer's address of the form (IP:Port)
+*/
+func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string) {
+	iNeed := false
+
+	peersCopy := make(map[string]*messages.PeerStatus)
+
+	// Copy from the Want map
+	for key, value := range gos.want {
+		peersCopy[key] = value
 	}
 
-	gos.sendToPeer(packet, randomPeer)
-	timer := time.AfterFunc(time.Second, func() {
-		gos.timers.Delete(randomPeer)
-		if (rand.Int() % 2) == 0 {
-			gos.rumormongering(packet, false)
+	for _, hisStatus := range msgStatus {
+		myStatus, ok := gos.want[hisStatus.Identifier]
+		if ok {
+			delete(peersCopy, hisStatus.Identifier)
+
+			if hisStatus.NextID > myStatus.NextID {
+				iNeed = true
+			}
+			if hisStatus.NextID < myStatus.NextID {
+				//Send him packet
+				packet := messages.GossipPacket{Rumor: gos.pastMsg.MessagesList[hisStatus.Identifier][hisStatus.NextID-1]}
+				serializedPacket, err := protobuf.Encode(&packet)
+				errors.CheckErr(err, "Error when encoding packet: ", false)
+				gos.sendToPeer(serializedPacket, peer)
+				return
+			}
 		} else {
+			iNeed = true
+		}
+	}
+
+	if len(peersCopy) > 0 {
+		id := ""
+		for key, stat := range peersCopy {
+			if stat.NextID > 1 {
+				id = key
+				break
+			}
+		}
+		if id != "" {
+			//Send him packet
+			packet := messages.GossipPacket{Rumor: gos.pastMsg.MessagesList[id][0]}
+			serializedPacket, err := protobuf.Encode(&packet)
+			errors.CheckErr(err, "Error when encoding packet: ", false)
+			gos.sendToPeer(serializedPacket, peer)
 			return
 		}
-	})
-	gos.timers.Store(randomPeer, timer)
+	}
+
+	if iNeed {
+		//Ask him for rumors
+		gos.sendStatus(peer)
+	} else {
+		fmt.Println("IN SYNC WITH", peer)
+		if (rand.Int() % 2) == 0 {
+			gos.rumormongering(gos.lastSent[peer], []string{peer}, false)
+		}
+	}
+
 }
 
 /*contains checks if the given string is contained in the given slice

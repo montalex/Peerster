@@ -62,9 +62,9 @@ func (packet *GossipPacket) ReadSimpleMessage() (string, string, string) {
 
 /*ReadRumorMessage reads the rumor message from a GossipPacket
 Returns the original name, the ID and the content*/
-func (packet *GossipPacket) ReadRumorMessage() (string, string, string) {
+func (packet *GossipPacket) ReadRumorMessage() (string, uint32, string) {
 	rumor := *packet.Rumor
-	return rumor.Origin, string(rumor.ID), rumor.Text
+	return rumor.Origin, rumor.ID, rumor.Text
 }
 
 /*ReadStatusMessage reads the status message from a GossipPacket
