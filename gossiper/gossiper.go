@@ -206,8 +206,10 @@ to a random peer every second*/
 func (gos *Gossiper) AntiEntropy() {
 	for {
 		time.Sleep(time.Second)
-		randomPeer := gos.knownPeers[rand.Int()%len(gos.knownPeers)]
-		gos.sendStatus(randomPeer)
+		if len(gos.knownPeers) > 0 {
+			randomPeer := gos.knownPeers[rand.Int()%len(gos.knownPeers)]
+			gos.sendStatus(randomPeer)
+		}
 	}
 }
 
@@ -327,6 +329,10 @@ func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string)
 			}
 		} else {
 			iNeed = true
+			gos.want[hisStatus.Identifier] = &messages.PeerStatus{
+				Identifier: hisStatus.Identifier,
+				NextID:     1,
+			}
 		}
 	}
 
