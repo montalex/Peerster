@@ -4,6 +4,7 @@ import (
 	"flag"
 
 	"github.com/montalex/Peerster/gossiper"
+	"github.com/montalex/Peerster/web"
 )
 
 func main() {
@@ -18,6 +19,7 @@ func main() {
 	clientReadBuffer := make([]byte, 4096)
 	peersReadBuffer := make([]byte, 4096)
 
+	go web.Run()
 	go gos.AntiEntropy()
 	go gos.ListenClient(clientReadBuffer)
 	gos.ListenPeers(peersReadBuffer)

@@ -5,6 +5,7 @@
   <meta charset="utf-8">
   <title>Peerster</title>
   <link type="text/css" rel="stylesheet" href="styles.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
 </head>
 
 <body id=mainBody>
@@ -25,13 +26,21 @@
   <div id=nodeBox>
       <p>Known Nodes:</p>
 
+      <div id=peerBox>
+        <!--<ul id=peersList></ul>-->
+      </div>
+
       <form class=container id=msgBox>
             <input class=txtInput id=addInput type="text">
             <button id=addButton onclick="add()">Add</button>
-        </form>
+      </form>
   </div>
 
   <script>
+      $.get( "/node", function( data ) {
+        document.getElementById("peerBox").append(data)
+      });
+
       function add() {
         var newPeer = document.getElementById("addInput").value;
         if(newPeer != null || newPeer != "") {
