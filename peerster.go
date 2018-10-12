@@ -19,7 +19,7 @@ func main() {
 	clientReadBuffer := make([]byte, 4096)
 	peersReadBuffer := make([]byte, 4096)
 
-	go web.Run()
+	go web.Run(gos)
 	go gos.AntiEntropy()
 	go gos.ListenClient(clientReadBuffer)
 	gos.ListenPeers(peersReadBuffer)

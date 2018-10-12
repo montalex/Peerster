@@ -378,3 +378,8 @@ func contains(peers []string, p string) bool {
 	}
 	return false
 }
+
+/*GetPeers returns the list of known peers*/
+func (gos *Gossiper) GetPeers() []string {
+	return gos.knownPeers
+}

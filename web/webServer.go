@@ -6,16 +6,17 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/montalex/Peerster/gossiper"
 )
 
-func handlePeers(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode("128.0.0.2:5000")
-}
-
 /*Run runs the server for the Peerster application*/
-func Run() {
+func Run(gos *gossiper.Gossiper) {
 	r := mux.NewRouter()
-	r.HandleFunc("/node", handlePeers)
+	r.HandleFunc("/node", func(w http.ResponseWriter, r *http.Request) {
+		for _, elem := range gos.GetPeers() {
+			json.NewEncoder(w).Encode(elem)
+		}
+	})
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/static/")))
 
 	log.Fatal(http.ListenAndServe(":8080", r))

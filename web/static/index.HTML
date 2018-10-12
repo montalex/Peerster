@@ -1,60 +1,89 @@
 <!doctype html>
 
 <html lang="en">
+
 <head>
-  <meta charset="utf-8">
-  <title>Peerster</title>
-  <link type="text/css" rel="stylesheet" href="styles.css">
-  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <meta charset="utf-8">
+    <title>Peerster</title>
+    <link type="text/css" rel="stylesheet" href="styles.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
 </head>
 
 <body id=mainBody>
-  <div id=idBox>
-      <p>Alexis</p> <!--TODO: dynamic id retrieve-->
-  </div>
+    <div id=idBox>
+        <p>Alexis</p>
+        <!--TODO: dynamic id retrieve-->
+    </div>
 
-  <div id=chatBox>
-      <p>Messages:</p>
-      <div id=test></div>
-      <form class=container id=msgBox>
-          <input class=txtInput id=msgInput type="text">
-          <button id=sendButton onclick="send()">Send</button>
-      </form>
-      
-  </div>
+    <div id=chatBox>
+        <p>Messages:</p>
+        <div id=test></div>
+        <form class=container id=msgBox>
+            <input class=txtInput id=msgInput type="text">
+            <button id=sendButton onclick="send()">Send</button>
+        </form>
 
-  <div id=nodeBox>
-      <p>Known Nodes:</p>
+    </div>
 
-      <div id=peerBox>
-        <!--<ul id=peersList></ul>-->
-      </div>
+    <div id=nodeBox>
+        <p>Known Nodes:</p>
 
-      <form class=container id=msgBox>
+        <div id=peerBox>
+            <ul id=peersList></ul>
+        </div>
+
+        <form class=container id=msgBox>
             <input class=txtInput id=addInput type="text">
             <button id=addButton onclick="add()">Add</button>
-      </form>
-  </div>
+        </form>
+    </div>
 
-  <script>
-      $.get( "/node", function( data ) {
-        document.getElementById("peerBox").append(data)
-      });
+    <script>
+        $(document).ready(function () {
+            getNodes();
+        });
 
-      function add() {
-        var newPeer = document.getElementById("addInput").value;
-        if(newPeer != null || newPeer != "") {
-            //ADD to list
+        function getNodes() {
+            $.get("/node", function (data) {
+                
+                var peers = String(data).split('\n')
+                peers.length = peers.length-1 //remove empty elem
+                console.log(peers)
+                var list = document.querySelector('#peersList');
+                list.innerHTML = ""
+                for (var i = 0; i < peers.length; i++) {
+                    var x = peers[i].replace('\"', '')
+                    x = x.replace('\"', '')
+                    // Create the list item:
+                    var item = document.createElement('li');
+                    item.appendChild(document.createTextNode(x));
+
+                    // Add it to the list:
+                    list.appendChild(item);
+                    //console.log(x)
+                }
+
+                document.getElementById("peerBox").appendChild(list)
+            });
+            setTimeout(getNodes, 10000);
         }
-      }
 
-      function send() {
-        var txt = document.getElementById("msgInput").value;
-        if(txt != null || txt != "") {
-            //Send to peer
-            document.getElementById("test").append(txt);
+
+        function add() {
+            var newPeer = document.getElementById("addInput").value;
+            if (newPeer != null || newPeer != "") {
+                //ADD to list
+            }
         }
-      }
-  </script>
+
+        function send() {
+            var txt = document.getElementById("msgInput").value;
+            if (txt != null || txt != "") {
+                //Send to peer
+                document.getElementById("test").append(txt);
+            }
+        }
+    </script>
 </body>
+
 </html>
