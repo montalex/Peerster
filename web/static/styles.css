@@ -3,7 +3,7 @@
 }
 
 #idBox {
-    position:fixed;
+    position: relative;
     width:98%;
     height:5%;
     left: 1%;
@@ -13,33 +13,36 @@
     background-color:yellow;
 }
 
+.wrapper {
+    display: grid;
+    grid-template-columns: 49% 2% 49%;
+    width: 100vw;
+    height: 100vh;
+}
+
 #chatBox {
-    position:fixed;
+    position:relative;
     height: 90%;
-    width: 48%; 
+    width: 99%; 
     left: 1%;
-    bottom: 1%;
     border: 1px solid #ccc;
     text-align: center;
-    line-height: 0em; 
     background-color:white;
 }
 
 #nodeBox {
-    position:fixed;
+    position:relative;
     overflow: visible;
     height: 90%;
-    width: 48%;
+    width: 99%;
     right: 1%;
-    bottom: 1%;
     border: 1px solid #ccc;
     text-align: center;
-    line-height: 0em; 
     background-color:white;
 }
 
 #sendButton {
-    position: fixed;
+    position: relative;
     background-color:blue;
     border: 1px solid #ccc;
     color: white;
@@ -48,7 +51,7 @@
 }
 
 #addButton {
-    position: fixed;
+    position: relative;
     background-color: green;
     border: 1px solid #ccc;
     color: white;

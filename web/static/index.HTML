@@ -15,27 +15,29 @@
         <!--TODO: dynamic id retrieve-->
     </div>
 
-    <div id=chatBox>
-        <p>Messages:</p>
-        <div id=test></div>
-        <form class=container id=msgBox>
-            <input class=txtInput id=msgInput type="text">
-            <button id=sendButton onclick="send()">Send</button>
-        </form>
+    <div class=wrapper>
+        <div id=chatBox>
+            <p>Messages:</p>
+            <div id=test></div>
+            <form class=container id=msgBox>
+                <input class=txtInput id=msgInput type="text">
+                <button id=sendButton onclick="send()">Send</button>
+            </form>
 
-    </div>
-
-    <div id=nodeBox>
-        <p>Known Nodes:</p>
-
-        <div id=peerBox>
-            <ul id=peersList></ul>
         </div>
 
-        <form class=container id=msgBox>
-            <input class=txtInput id=addInput type="text">
-            <button id=addButton onclick="add()">Add</button>
-        </form>
+        <div></div>
+
+        <div id=nodeBox>
+            <p>Known Nodes:</p>
+
+            <ul id=peersList></ul>
+
+            <form class=container id=msgBox>
+                <input class=txtInput id=addInput type="text">
+                <button id=addButton onclick="addNode()">Add</button>
+            </form>
+        </div>
     </div>
 
     <script>
@@ -45,34 +47,28 @@
 
         function getNodes() {
             $.get("/node", function (data) {
-                
                 var peers = String(data).split('\n')
                 peers.length = peers.length-1 //remove empty elem
-                console.log(peers)
                 var list = document.querySelector('#peersList');
                 list.innerHTML = ""
+
                 for (var i = 0; i < peers.length; i++) {
                     var x = peers[i].replace('\"', '')
                     x = x.replace('\"', '')
-                    // Create the list item:
+
                     var item = document.createElement('li');
                     item.appendChild(document.createTextNode(x));
-
-                    // Add it to the list:
                     list.appendChild(item);
-                    //console.log(x)
                 }
-
-                document.getElementById("peerBox").appendChild(list)
             });
-            setTimeout(getNodes, 10000);
+            setTimeout(getNodes, 1000);
         }
 
 
-        function add() {
+        function addNode() {
             var newPeer = document.getElementById("addInput").value;
-            if (newPeer != null || newPeer != "") {
-                //ADD to list
+            if (newPeer !== "") {
+                //todo
             }
         }
 
