@@ -383,3 +383,10 @@ func contains(peers []string, p string) bool {
 func (gos *Gossiper) GetPeers() []string {
 	return gos.knownPeers
 }
+
+/*AddPeer adds a peer to the gossiper's list
+newPeer: the new peer to add
+*/
+func (gos *Gossiper) AddPeer(newPeer string) {
+	gos.knownPeers = append(gos.knownPeers, newPeer)
+}

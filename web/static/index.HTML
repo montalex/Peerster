@@ -68,7 +68,7 @@
         function addNode() {
             var newPeer = document.getElementById("addInput").value;
             if (newPeer !== "") {
-                //todo
+                $.post("/node", newPeer);
             }
         }
 

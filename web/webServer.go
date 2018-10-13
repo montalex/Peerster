@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 
@@ -11,13 +12,21 @@ import (
 
 /*Run runs the server for the Peerster application*/
 func Run(gos *gossiper.Gossiper) {
-	r := mux.NewRouter()
-	r.HandleFunc("/node", func(w http.ResponseWriter, r *http.Request) {
+	router := mux.NewRouter()
+
+	router.HandleFunc("/node", func(w http.ResponseWriter, r *http.Request) {
 		for _, elem := range gos.GetPeers() {
 			json.NewEncoder(w).Encode(elem)
 		}
-	})
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/static/")))
+	}).Methods("GET")
 
-	log.Fatal(http.ListenAndServe(":8080", r))
+	router.HandleFunc("/node", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := ioutil.ReadAll(r.Body)
+		newPeer := string(body)
+		gos.AddPeer(newPeer)
+	}).Methods("POST")
+
+	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/static/")))
+
+	log.Fatal(http.ListenAndServe(":8080", router))
 }
