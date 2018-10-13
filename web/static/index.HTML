@@ -11,14 +11,15 @@
 
 <body id=mainBody>
     <div id=idBox>
-        <p>Alexis</p>
-        <!--TODO: dynamic id retrieve-->
+        <p id=name></p>
     </div>
 
     <div class=wrapper>
         <div id=chatBox>
             <p>Messages:</p>
-            <div id=test></div>
+
+            <ul id=msgList></ul>
+
             <form class=container id=msgBox>
                 <input class=txtInput id=msgInput type="text">
                 <button id=sendButton onclick="send()">Send</button>
@@ -43,7 +44,20 @@
     <script>
         $(document).ready(function () {
             getNodes();
+            getID();
+            getMessage();
         });
+
+        function getID() {
+            $.get("/id", function (data) {
+                var name = String(data)
+                name.length = name.length-1 //remove empty elem
+                name = name.replace('\"', '')
+                name = name.replace('\"', '')
+                var pName = document.querySelector('#name');
+                pName.innerHTML = name
+            });
+        }
 
         function getNodes() {
             $.get("/node", function (data) {
@@ -64,6 +78,24 @@
             setTimeout(getNodes, 1000);
         }
 
+        function getMessage() {
+            $.get("/message", function (data) {
+                var msg = String(data).split('\n')
+                msg.length = msg.length-1 //remove empty elem
+                var list = document.querySelector('#msgList');
+                list.innerHTML = ""
+
+                for (var i = 0; i < msg.length; i++) {
+                    var x = msg[i].replace('\"', '')
+                    x = x.replace('\"', '')
+
+                    var item = document.createElement('li');
+                    item.appendChild(document.createTextNode(x));
+                    list.appendChild(item);
+                }
+            });
+            setTimeout(getMessage, 1000);
+        }
 
         function addNode() {
             var newPeer = document.getElementById("addInput").value;
@@ -74,9 +106,8 @@
 
         function send() {
             var txt = document.getElementById("msgInput").value;
-            if (txt != null || txt != "") {
-                //Send to peer
-                document.getElementById("test").append(txt);
+            if (txt !== "") {
+                $.post("/message", txt);
             }
         }
     </script>

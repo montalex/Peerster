@@ -108,21 +108,7 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				//Transmit to all peers
 				gos.sendToAll(serializedPacket, []string{})
 			} else {
-				if len(gos.knownPeers) == 0 {
-					fmt.Println("Error: could not retransmit message, I do not know any other peers!")
-				} else {
-					rumor := messages.RumorMessage{
-						Origin: gos.name,
-						ID:     gos.want[gos.name].NextID,
-						Text:   msg}
-
-					//Add to past
-					gos.pastMsg.MessagesList[gos.name] = append(gos.pastMsg.MessagesList[gos.name], &rumor)
-
-					//Transmit to a random peer if at least one is known
-					gos.rumormongering(&rumor, []string{}, true)
-					gos.want[gos.name].NextID++
-				}
+				gos.SendRumor(msg)
 			}
 		}
 	}
@@ -256,9 +242,7 @@ func (gos *Gossiper) sendStatus(peer string) {
 /*addPrintPeers adds relay address if not contained already and prints all known peers*/
 func (gos *Gossiper) addPrintPeers(addr string) {
 	//Adds relay address if not contained already
-	if !contains(gos.knownPeers, addr) {
-		gos.knownPeers = append(gos.knownPeers, addr)
-	}
+	gos.AddPeer(addr)
 	fmt.Println("PEERS ", strings.Join(gos.knownPeers, ","))
 }
 
@@ -379,6 +363,11 @@ func contains(peers []string, p string) bool {
 	return false
 }
 
+/*GetName returns the list of known peers*/
+func (gos *Gossiper) GetName() string {
+	return gos.name
+}
+
 /*GetPeers returns the list of known peers*/
 func (gos *Gossiper) GetPeers() []string {
 	return gos.knownPeers
@@ -388,5 +377,39 @@ func (gos *Gossiper) GetPeers() []string {
 newPeer: the new peer to add
 */
 func (gos *Gossiper) AddPeer(newPeer string) {
-	gos.knownPeers = append(gos.knownPeers, newPeer)
+	if !contains(gos.knownPeers, newPeer) {
+		gos.knownPeers = append(gos.knownPeers, newPeer)
+	}
+}
+
+/*GetMessages returns the list of messages recieves in the form Origin: Message*/
+func (gos *Gossiper) GetMessages() []string {
+	allMsg := make([]string, 0)
+	for key, rumList := range gos.pastMsg.MessagesList {
+		for _, msg := range rumList {
+			allMsg = append(allMsg, key+": "+msg.Text)
+		}
+	}
+	return allMsg
+}
+
+/*SendRumor start the rumor mongering process
+msg: the message to send
+*/
+func (gos *Gossiper) SendRumor(msg string) {
+	if len(gos.knownPeers) == 0 {
+		fmt.Println("Error: could not retransmit message, I do not know any other peers!")
+	} else {
+		rumor := messages.RumorMessage{
+			Origin: gos.name,
+			ID:     gos.want[gos.name].NextID,
+			Text:   msg}
+
+		//Add to past
+		gos.pastMsg.MessagesList[gos.name] = append(gos.pastMsg.MessagesList[gos.name], &rumor)
+		gos.want[gos.name].NextID++
+
+		//Transmit to a random peer if at least one is known
+		gos.rumormongering(&rumor, []string{}, true)
+	}
 }

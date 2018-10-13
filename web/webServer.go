@@ -14,6 +14,10 @@ import (
 func Run(gos *gossiper.Gossiper) {
 	router := mux.NewRouter()
 
+	router.HandleFunc("/id", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(gos.GetName())
+	}).Methods("GET")
+
 	router.HandleFunc("/node", func(w http.ResponseWriter, r *http.Request) {
 		for _, elem := range gos.GetPeers() {
 			json.NewEncoder(w).Encode(elem)
@@ -24,6 +28,18 @@ func Run(gos *gossiper.Gossiper) {
 		body, _ := ioutil.ReadAll(r.Body)
 		newPeer := string(body)
 		gos.AddPeer(newPeer)
+	}).Methods("POST")
+
+	router.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
+		for _, elem := range gos.GetMessages() {
+			json.NewEncoder(w).Encode(elem)
+		}
+	}).Methods("GET")
+
+	router.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := ioutil.ReadAll(r.Body)
+		msg := string(body)
+		gos.SendRumor(msg)
 	}).Methods("POST")
 
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/static/")))
