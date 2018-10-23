@@ -30,9 +30,9 @@ type Gossiper struct {
 	peersAddr, clientAddr *net.UDPAddr
 	peersConn, clientConn *net.UDPConn
 	name                  string
-	knownPeers            []string
+	knownPeers            SafePeers
 	simple                bool
-	want                  map[string]*messages.PeerStatus
+	want                  SafeStatus
 	timers                *sync.Map
 	pastMsg               messages.PastMessages
 	lastSent              map[string]*messages.RumorMessage
@@ -47,27 +47,32 @@ simple: only using simple message if set to true
 Returns the gossiper
 */
 func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
-	//Gossiper outside UDP listener
+	//Gossiper's outside UDP listener
 	udpPeersAddr, err := net.ResolveUDPAddr("udp4", address)
 	errors.CheckErr(err, "Error when resolving UDP address: ", true)
 	udpPeersConn, err := net.ListenUDP("udp4", udpPeersAddr)
 	errors.CheckErr(err, "Error with UDP connection: ", true)
 
-	//Gossiper client UDP listener
+	//Gossiper's client UDP listener
 	udpClientAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+UIPort)
 	errors.CheckErr(err, "Error when resolving UDP address: ", true)
 	udpClientConn, err := net.ListenUDP("udp4", udpClientAddr)
 	errors.CheckErr(err, "Error with UDP connection: ", true)
 
+	//Gossiper's known peers list
 	peersList := make([]string, 0)
 	if peers != "" {
 		peersList = strings.Split(peers, ",")
 	}
+	safePeers := SafePeers{peers: peersList}
+
+	//Gossiper's peer status
 	var initWant = make(map[string]*messages.PeerStatus)
 	initWant[name] = &messages.PeerStatus{
 		Identifier: name,
 		NextID:     1,
 	}
+	safeWant := SafeStatus{m: initWant}
 
 	return &Gossiper{
 		peersAddr:  udpPeersAddr,
@@ -75,9 +80,9 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 		peersConn:  udpPeersConn,
 		clientConn: udpClientConn,
 		name:       name,
-		knownPeers: peersList,
+		knownPeers: safePeers,
 		simple:     simple,
-		want:       initWant,
+		want:       safeWant,
 		timers:     &sync.Map{},
 		pastMsg:    messages.PastMessages{MessagesList: make(map[string][]*messages.RumorMessage)},
 		lastSent:   make(map[string]*messages.RumorMessage),
@@ -94,7 +99,7 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 		if size != 0 {
 			msg := string(readBuffer[:size])
 			fmt.Println("CLIENT MESSAGE", msg)
-			fmt.Println("PEERS", strings.Join(gos.knownPeers, ","))
+			fmt.Println("PEERS", strings.Join(gos.knownPeers.SafeRead(), ","))
 
 			//Prepare packet and send it
 			if gos.simple {
@@ -145,16 +150,16 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				fmt.Println("RUMOR origin", nameOrigin, "from", relayAddr, "ID", id, "contents", content)
 				gos.addPrintPeers(relayAddr)
 
-				//Checks if this peer is in the list already
-				if _, ok := gos.want[nameOrigin]; !ok {
-					gos.want[nameOrigin] = &messages.PeerStatus{Identifier: nameOrigin, NextID: uint32(1)}
+				//Checks if this peer is in the list already else add new entry with ID = 1
+				if _, ok := gos.want.SafeRead(nameOrigin); !ok {
+					gos.want.SafeUpdate(nameOrigin, &messages.PeerStatus{Identifier: nameOrigin, NextID: uint32(1)})
 				}
 
 				//Checks if id is the one we need, otherwise drop msg.
 				//If already seen, no need to read it.
 				//If more recent then needed, we will recieve it later in order.
-				if id == gos.want[nameOrigin].NextID {
-					gos.want[nameOrigin].NextID++
+				if id == gos.want.SafeID(nameOrigin) {
+					gos.want.SafeInc(nameOrigin)
 					gos.pastMsg.MessagesList[nameOrigin] = append(gos.pastMsg.MessagesList[nameOrigin], packet.Rumor)
 
 					//Send status answer
@@ -192,8 +197,9 @@ to a random peer every second*/
 func (gos *Gossiper) AntiEntropy() {
 	for {
 		time.Sleep(time.Second)
-		if len(gos.knownPeers) > 0 {
-			randomPeer := gos.knownPeers[rand.Int()%len(gos.knownPeers)]
+		size := gos.knownPeers.SafeSize()
+		if size > 0 {
+			randomPeer := gos.knownPeers.SafeReadSpec(rand.Int() % size)
 			gos.sendStatus(randomPeer)
 		}
 	}
@@ -214,8 +220,8 @@ packet: the packet to send
 except: a slice of peers to omit in the transmission (if none is empty)
 */
 func (gos *Gossiper) sendToAll(packet []byte, except []string) {
-	if len(gos.knownPeers) != 0 {
-		for _, peer := range gos.knownPeers {
+	if gos.knownPeers.SafeSize() != 0 {
+		for _, peer := range gos.knownPeers.SafeRead() {
 			if !contains(except, peer) {
 				gos.sendToPeer(packet, peer)
 			}
@@ -227,10 +233,7 @@ func (gos *Gossiper) sendToAll(packet []byte, except []string) {
 peer: the peer's address of the form (IP:Port)
 */
 func (gos *Gossiper) sendStatus(peer string) {
-	wantSlice := []messages.PeerStatus{}
-	for _, p := range gos.want {
-		wantSlice = append(wantSlice, *p)
-	}
+	wantSlice := gos.want.SafeStatusList()
 
 	packet := messages.GossipPacket{Status: &messages.StatusPacket{
 		Want: wantSlice}}
@@ -243,7 +246,7 @@ func (gos *Gossiper) sendStatus(peer string) {
 func (gos *Gossiper) addPrintPeers(addr string) {
 	//Adds relay address if not contained already
 	gos.AddPeer(addr)
-	fmt.Println("PEERS ", strings.Join(gos.knownPeers, ","))
+	fmt.Println("PEERS ", strings.Join(gos.knownPeers.SafeRead(), ","))
 }
 
 /*rumormongering is a simple rumoring protocol
@@ -252,10 +255,11 @@ except: a slice of peers to omit in the transmission (if none is empty) of the f
 first: set to true when starting a new rumor
 */
 func (gos *Gossiper) rumormongering(rumor *messages.RumorMessage, except []string, first bool) {
-	if len(except) < len(gos.knownPeers) {
-		randomPeer := gos.knownPeers[rand.Int()%len(gos.knownPeers)]
+	size := gos.knownPeers.SafeSize()
+	if len(except) < size {
+		randomPeer := gos.knownPeers.SafeReadSpec(rand.Int() % size)
 		for contains(except, randomPeer) {
-			randomPeer = gos.knownPeers[rand.Int()%len(gos.knownPeers)]
+			randomPeer = gos.knownPeers.SafeReadSpec(rand.Int() % size)
 		}
 
 		packet := messages.GossipPacket{Rumor: rumor}
@@ -288,15 +292,10 @@ peer: the peer's address of the form (IP:Port)
 func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string) {
 	iNeed := false
 
-	peersCopy := make(map[string]*messages.PeerStatus)
-
-	// Copy from the Want map
-	for key, value := range gos.want {
-		peersCopy[key] = value
-	}
+	peersCopy := gos.want.MakeSafeCopy()
 
 	for _, hisStatus := range msgStatus {
-		myStatus, ok := gos.want[hisStatus.Identifier]
+		myStatus, ok := gos.want.SafeRead(hisStatus.Identifier)
 		if ok {
 			delete(peersCopy, hisStatus.Identifier)
 
@@ -313,10 +312,10 @@ func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string)
 			}
 		} else {
 			iNeed = true
-			gos.want[hisStatus.Identifier] = &messages.PeerStatus{
+			gos.want.SafeUpdate(hisStatus.Identifier, &messages.PeerStatus{
 				Identifier: hisStatus.Identifier,
 				NextID:     1,
-			}
+			})
 		}
 	}
 
@@ -363,23 +362,19 @@ func contains(peers []string, p string) bool {
 	return false
 }
 
-/*GetName returns the list of known peers*/
+/*GetName returns the name of the Gossiper*/
 func (gos *Gossiper) GetName() string {
 	return gos.name
 }
 
 /*GetPeers returns the list of known peers*/
 func (gos *Gossiper) GetPeers() []string {
-	return gos.knownPeers
+	return gos.knownPeers.SafeRead()
 }
 
-/*AddPeer adds a peer to the gossiper's list
-newPeer: the new peer to add
-*/
+/*AddPeer returns the list of known peers*/
 func (gos *Gossiper) AddPeer(newPeer string) {
-	if !contains(gos.knownPeers, newPeer) {
-		gos.knownPeers = append(gos.knownPeers, newPeer)
-	}
+	gos.knownPeers.SafeAdd(newPeer)
 }
 
 /*GetMessages returns the list of messages recieves in the form Origin: Message*/
@@ -397,17 +392,17 @@ func (gos *Gossiper) GetMessages() []string {
 msg: the message to send
 */
 func (gos *Gossiper) SendRumor(msg string) {
-	if len(gos.knownPeers) == 0 {
+	if gos.knownPeers.SafeSize() == 0 {
 		fmt.Println("Error: could not retransmit message, I do not know any other peers!")
 	} else {
 		rumor := messages.RumorMessage{
 			Origin: gos.name,
-			ID:     gos.want[gos.name].NextID,
+			ID:     gos.want.SafeID(gos.name),
 			Text:   msg}
 
 		//Add to past
 		gos.pastMsg.MessagesList[gos.name] = append(gos.pastMsg.MessagesList[gos.name], &rumor)
-		gos.want[gos.name].NextID++
+		gos.want.SafeInc(gos.name)
 
 		//Transmit to a random peer if at least one is known
 		gos.rumormongering(&rumor, []string{}, true)
