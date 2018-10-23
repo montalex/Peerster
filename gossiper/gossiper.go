@@ -64,7 +64,6 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 	if peers != "" {
 		peersList = strings.Split(peers, ",")
 	}
-	safePeers := SafePeers{peers: peersList}
 
 	//Gossiper's peer status
 	var initWant = make(map[string]*messages.PeerStatus)
@@ -72,7 +71,6 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 		Identifier: name,
 		NextID:     1,
 	}
-	safeWant := SafeStatus{m: initWant}
 
 	return &Gossiper{
 		peersAddr:  udpPeersAddr,
@@ -80,9 +78,9 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 		peersConn:  udpPeersConn,
 		clientConn: udpClientConn,
 		name:       name,
-		knownPeers: safePeers,
+		knownPeers: SafePeers{peers: peersList},
 		simple:     simple,
-		want:       safeWant,
+		want:       SafeStatus{m: initWant},
 		timers:     &sync.Map{},
 		pastMsg:    messages.PastMessages{MessagesList: make(map[string][]*messages.RumorMessage)},
 		lastSent:   make(map[string]*messages.RumorMessage),
