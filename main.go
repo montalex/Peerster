@@ -19,11 +19,17 @@ func main() {
 	gos := gossiper.NewGossiper(*gossipAddr, *UIPort, *name, *peers, *simple)
 	clientReadBuffer := make([]byte, 4096)
 	peersReadBuffer := make([]byte, 4096)
-
 	go gos.ListenClient(clientReadBuffer)
 	go gos.ListenPeers(peersReadBuffer)
+
 	if *webserver {
 		go web.Run(gos)
 	}
-	gos.AntiEntropy()
+	if !*simple {
+		go gos.AntiEntropy()
+	}
+
+	for {
+
+	}
 }
