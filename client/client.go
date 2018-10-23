@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"net"
+	"time"
 
 	"github.com/montalex/Peerster/errors"
 )
@@ -17,6 +18,8 @@ func main() {
 
 	myAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:4284")
 	errors.CheckErr(err, "Error when resolving UDP local address: ", true)
+
+	time.Sleep(5 * time.Millisecond)
 
 	udpConn, err := net.DialUDP("udp", myAddr, destAddr)
 	errors.CheckErr(err, "Error with UDP connection: ", true)
