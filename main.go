@@ -12,6 +12,7 @@ func main() {
 	var gossipAddr = flag.String("gossipAddr", "127.0.0.1:5000", "ip:port for the gossiper")
 	var name = flag.String("name", "Alexis-245433", "name of the gossiper")
 	var peers = flag.String("peers", "", "comma separated list of peers of the form ip:port")
+	var rtimer = flag.Int("rtimer", 0, "route rumors sending period in seconds, 0 to disable sending of route rumors (default 0)")
 	var simple = flag.Bool("simple", false, "run gossiper in simple broadcast mode")
 	var webserver = flag.Bool("web", false, "run Peerster with the web server mode")
 	flag.Parse()
@@ -27,6 +28,9 @@ func main() {
 	}
 	if !*simple {
 		go gos.AntiEntropy()
+	}
+	if *rtimer > 0 {
+		go gos.RoutingRumors(*rtimer)
 	}
 
 	for {

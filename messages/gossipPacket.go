@@ -75,5 +75,5 @@ func (packet *GossipPacket) ReadStatusMessage() string {
 	for _, s := range status.Want {
 		statusString = statusString + "peer " + s.Identifier + " nextID " + strconv.FormatUint(uint64(s.NextID), 10) + " "
 	}
-	return statusString[:len(statusString)-1]
+	return statusString
 }
