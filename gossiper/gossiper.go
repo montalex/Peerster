@@ -164,7 +164,8 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				//Checks if id is the one we need, otherwise drop msg.
 				//If already seen, no need to read it.
 				//If more recent then needed, we will recieve it later in order.
-				if id == gos.want.SafeID(nameOrigin) {
+				//Makes sure if people resend my own message I drop them
+				if id == gos.want.SafeID(nameOrigin) && nameOrigin != gos.name {
 					gos.want.SafeInc(nameOrigin)
 					gos.pastMsg.MessagesList[nameOrigin] = append(gos.pastMsg.MessagesList[nameOrigin], packet.Rumor)
 					gos.routingTable.SafeUpdate(nameOrigin, relayAddr)
