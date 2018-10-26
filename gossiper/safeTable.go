@@ -14,11 +14,12 @@ type SafeTable struct {
 /*SafeRead reads the table for the given name
 name: the name of the peer
 */
-func (t *SafeTable) SafeRead(name string) string {
+func (t *SafeTable) SafeRead(name string) (string, bool) {
 	t.mux.RLock()
 	defer t.mux.RUnlock()
 
-	return t.table[name]
+	v, ok := t.table[name]
+	return v, ok
 }
 
 /*SafeUpdate updates safely the routing table

@@ -10,9 +10,10 @@ Rumor: if this is a rumor message
 Status: if this is a status message
 */
 type GossipPacket struct {
-	Simple *SimpleMessage
-	Rumor  *RumorMessage
-	Status *StatusPacket
+	Simple  *SimpleMessage
+	Rumor   *RumorMessage
+	Status  *StatusPacket
+	Private *PrivateMessage
 }
 
 /*StatusPacket is the packet send for PeerStatus
@@ -53,6 +54,21 @@ type PeerStatus struct {
 	NextID     uint32
 }
 
+/*PrivateMessage is used to transmit a private message to a specific peer
+Origin: the original sender's name
+ID: the message ID (set to 0 by default as no ordering is enforced in private messaging for now)
+Text: the text of the message
+Desitnation: the destination name (ex: Alice or Bob)
+HopLimit: the maximum number of hop this message can do
+*/
+type PrivateMessage struct {
+	Origin      string
+	ID          uint32
+	Text        string
+	Destination string
+	HopLimit    uint32
+}
+
 /*ReadSimpleMessage reads the simple message from a GossipPacket
 Returns the original name, the relay peer's address and the content*/
 func (packet *GossipPacket) ReadSimpleMessage() (string, string, string) {
@@ -76,4 +92,11 @@ func (packet *GossipPacket) ReadStatusMessage() string {
 		statusString = statusString + "peer " + s.Identifier + " nextID " + strconv.FormatUint(uint64(s.NextID), 10) + " "
 	}
 	return statusString
+}
+
+/*ReadPrivateMessage reads the private message from a GossipPacket
+Returns the origin's name, the ID, the content, the destination name and the hop limit*/
+func (packet *GossipPacket) ReadPrivateMessage() (string, uint32, string, string, uint32) {
+	private := *packet.Private
+	return private.Origin, private.ID, private.Text, private.Destination, private.HopLimit
 }

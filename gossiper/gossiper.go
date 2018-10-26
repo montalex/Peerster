@@ -97,23 +97,37 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 		size, _, err := gos.clientConn.ReadFromUDP(readBuffer)
 		errors.CheckErr(err, "Error when reading message: ", false)
 		if size != 0 {
-			msg := string(readBuffer[:size])
-			fmt.Println("CLIENT MESSAGE", msg)
-			fmt.Println("PEERS", strings.Join(gos.knownPeers.SafeRead(), ","))
+			var packet messages.GossipPacket
+			protobuf.Decode(readBuffer[:size], &packet)
 
-			//Prepare packet and send it
-			if gos.simple {
-				packet := messages.GossipPacket{Simple: &messages.SimpleMessage{
-					OriginalName:  gos.name,
-					RelayPeerAddr: gos.peersAddr.String(),
-					Contents:      msg}}
+			if packet.Simple != nil {
+				//Prepare packet and send it
+				if gos.simple {
+					_, _, msg := packet.ReadSimpleMessage()
+					gos.printClientMsg(msg)
+
+					packet.Simple.OriginalName = gos.name
+					packet.Simple.RelayPeerAddr = gos.peersAddr.String()
+					serializedPacket, err := protobuf.Encode(&packet)
+					errors.CheckErr(err, "Error when encoding packet: ", false)
+
+					//Transmit to all peers
+					gos.sendToAll(serializedPacket, []string{})
+				} else {
+					_, _, msg := packet.ReadRumorMessage()
+					gos.printClientMsg(msg)
+					gos.SendRumor(msg)
+				}
+			} else {
+				_, _, msg, dest, _ := packet.ReadPrivateMessage()
+				gos.printClientMsg(msg)
+
+				packet.Private.Origin = gos.name
 				serializedPacket, err := protobuf.Encode(&packet)
 				errors.CheckErr(err, "Error when encoding packet: ", false)
-
-				//Transmit to all peers
-				gos.sendToAll(serializedPacket, []string{})
-			} else {
-				gos.SendRumor(msg)
+				if destAddr, ok := gos.routingTable.SafeRead(dest); ok {
+					gos.sendToPeer(serializedPacket, destAddr)
+				}
 			}
 		}
 	}
@@ -193,6 +207,21 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 
 				//Compare with own status
 				gos.compareStatus(packet.Status.Want, relayAddr)
+			} else if packet.Private != nil {
+				name, _, content, dest, nHop := packet.ReadPrivateMessage()
+
+				if dest == gos.name {
+					fmt.Println("PRIVATE origin", name, "hop-limit", nHop, "contents", content)
+				} else {
+					if nHop > 1 {
+						packet.Private.HopLimit--
+						serializedPacket, err := protobuf.Encode(&packet)
+						errors.CheckErr(err, "Error when encoding packet: ", false)
+						if destAddr, ok := gos.routingTable.SafeRead(dest); ok {
+							gos.sendToPeer(serializedPacket, destAddr)
+						}
+					}
+				}
 			} else { //Should never happen!
 				fmt.Println("Error: MESSAGE FORM UNKNOWN. Sent by", relayAddr)
 			}
@@ -249,7 +278,7 @@ func (gos *Gossiper) sendToAll(packet []byte, except []string) {
 	}
 }
 
-/*sendToPeer sends a packet to a given peer
+/*sendStatus sends a packet to a given peer
 peer: the peer's address of the form (IP:Port)
 */
 func (gos *Gossiper) sendStatus(peer string) {
@@ -264,6 +293,11 @@ func (gos *Gossiper) addPrintPeers(addr string) {
 	//Adds relay address if not contained already
 	gos.AddPeer(addr)
 	fmt.Println("PEERS ", strings.Join(gos.knownPeers.SafeRead(), ","))
+}
+
+func (gos *Gossiper) printClientMsg(msg string) {
+	fmt.Println("CLIENT MESSAGE", msg)
+	fmt.Println("PEERS", strings.Join(gos.knownPeers.SafeRead(), ","))
 }
 
 /*rumormongering is a simple rumoring protocol
@@ -396,7 +430,10 @@ func (gos *Gossiper) GetMessages() []string {
 	allMsg := make([]string, 0)
 	for key, rumList := range gos.pastMsg.MessagesList {
 		for _, msg := range rumList {
-			allMsg = append(allMsg, key+": "+msg.Text)
+			//Do not display routing rumor in GUI
+			if msg.Text != "" {
+				allMsg = append(allMsg, key+": "+msg.Text)
+			}
 		}
 	}
 	return allMsg
