@@ -29,15 +29,22 @@
 
         <div></div>
 
-        <div id=nodeBox>
-            <p>Known Nodes:</p>
+        <div id=nodeBox class=row_wrapper>
+            <div id=knownNodes>
+                <p>Known Nodes:</p>
 
-            <ul id=peersList></ul>
+                <ul id=peersList></ul>
 
-            <form class=container id=msgBox>
-                <input class=txtInput id=addInput type="text">
-                <button id=addButton onclick="addNode()">Add</button>
-            </form>
+                <form class=container id=msgBox>
+                    <input class=txtInput id=addInput type="text">
+                    <button id=addButton onclick="addNode()">Add</button>
+                </form>
+            </div>
+            <div id=privateNodes>
+                <p>Private Messages:</p>
+
+                <ul id=nodeList></ul>
+            </div>
         </div>
     </div>
 
@@ -46,6 +53,7 @@
             getNodes();
             getID();
             getMessage();
+            getNames();
         });
 
         function getID() {
@@ -59,15 +67,15 @@
             });
         }
 
-        function getNodes() {
-            $.get("/node", function (data) {
-                var peers = String(data).split('\n')
-                peers.length = peers.length-1 //remove empty elem
-                var list = document.querySelector('#peersList');
+        function getNames() {
+            $.get("/name", function (data) {
+                var names = String(data).split('\n')
+                names.length = names.length-1 //remove empty elem
+                var list = document.querySelector('#nodeList');
                 list.innerHTML = ""
 
-                for (var i = 0; i < peers.length; i++) {
-                    var x = peers[i].replace('\"', '')
+                for (var i = 0; i < names.length; i++) {
+                    var x = names[i].replace('\"', '')
                     x = x.replace('\"', '')
 
                     var item = document.createElement('li');
@@ -95,6 +103,25 @@
                 }
             });
             setTimeout(getMessage, 1000);
+        }
+
+        function getNodes() {
+            $.get("/node", function (data) {
+                var peers = String(data).split('\n')
+                peers.length = peers.length-1 //remove empty elem
+                var list = document.querySelector('#peersList');
+                list.innerHTML = ""
+
+                for (var i = 0; i < peers.length; i++) {
+                    var x = peers[i].replace('\"', '')
+                    x = x.replace('\"', '')
+
+                    var item = document.createElement('li');
+                    item.appendChild(document.createTextNode(x));
+                    list.appendChild(item);
+                }
+            });
+            setTimeout(getNodes, 1000);
         }
 
         function addNode() {

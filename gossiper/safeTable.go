@@ -11,15 +11,23 @@ type SafeTable struct {
 	mux   sync.RWMutex
 }
 
-/*SafeRead reads the table for the given name
+/*SafeReadSpec reads the table for the given name
 name: the name of the peer
 */
-func (t *SafeTable) SafeRead(name string) (string, bool) {
+func (t *SafeTable) SafeReadSpec(name string) (string, bool) {
 	t.mux.RLock()
 	defer t.mux.RUnlock()
 
 	v, ok := t.table[name]
 	return v, ok
+}
+
+/*SafeRead reads the whole table*/
+func (t *SafeTable) SafeRead() map[string]string {
+	t.mux.RLock()
+	defer t.mux.RUnlock()
+
+	return t.table
 }
 
 /*SafeUpdate updates safely the routing table

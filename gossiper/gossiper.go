@@ -102,10 +102,9 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 
 			if packet.Simple != nil {
 				//Prepare packet and send it
+				_, _, msg := packet.ReadSimpleMessage()
+				gos.PrintClientMsg(msg)
 				if gos.simple {
-					_, _, msg := packet.ReadSimpleMessage()
-					gos.printClientMsg(msg)
-
 					packet.Simple.OriginalName = gos.name
 					packet.Simple.RelayPeerAddr = gos.peersAddr.String()
 					serializedPacket, err := protobuf.Encode(&packet)
@@ -114,18 +113,16 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 					//Transmit to all peers
 					gos.sendToAll(serializedPacket, []string{})
 				} else {
-					_, _, msg := packet.ReadRumorMessage()
-					gos.printClientMsg(msg)
 					gos.SendRumor(msg)
 				}
 			} else {
 				_, _, msg, dest, _ := packet.ReadPrivateMessage()
-				gos.printClientMsg(msg)
+				gos.PrintClientMsg(msg)
 
 				packet.Private.Origin = gos.name
 				serializedPacket, err := protobuf.Encode(&packet)
 				errors.CheckErr(err, "Error when encoding packet: ", false)
-				if destAddr, ok := gos.routingTable.SafeRead(dest); ok {
+				if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 					gos.sendToPeer(serializedPacket, destAddr)
 				}
 			}
@@ -217,7 +214,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 						packet.Private.HopLimit--
 						serializedPacket, err := protobuf.Encode(&packet)
 						errors.CheckErr(err, "Error when encoding packet: ", false)
-						if destAddr, ok := gos.routingTable.SafeRead(dest); ok {
+						if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 							gos.sendToPeer(serializedPacket, destAddr)
 						}
 					}
@@ -295,7 +292,8 @@ func (gos *Gossiper) addPrintPeers(addr string) {
 	fmt.Println("PEERS ", strings.Join(gos.knownPeers.SafeRead(), ","))
 }
 
-func (gos *Gossiper) printClientMsg(msg string) {
+/*PrintClientMsg outputs the content of the client message in the console*/
+func (gos *Gossiper) PrintClientMsg(msg string) {
 	fmt.Println("CLIENT MESSAGE", msg)
 	fmt.Println("PEERS", strings.Join(gos.knownPeers.SafeRead(), ","))
 }
@@ -437,6 +435,15 @@ func (gos *Gossiper) GetMessages() []string {
 		}
 	}
 	return allMsg
+}
+
+/*GetNodesName returns the list of peers name for private messaging*/
+func (gos *Gossiper) GetNodesName() []string {
+	allNames := make([]string, 0)
+	for name := range gos.routingTable.SafeRead() {
+		allNames = append(allNames, name)
+	}
+	return allNames
 }
 
 /*SendRumor start the rumor mongering process

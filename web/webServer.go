@@ -24,6 +24,12 @@ func Run(gos *gossiper.Gossiper) {
 		}
 	}).Methods("GET")
 
+	router.HandleFunc("/name", func(w http.ResponseWriter, r *http.Request) {
+		for _, elem := range gos.GetNodesName() {
+			json.NewEncoder(w).Encode(elem)
+		}
+	}).Methods("GET")
+
 	router.HandleFunc("/node", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := ioutil.ReadAll(r.Body)
 		newPeer := string(body)
@@ -39,6 +45,7 @@ func Run(gos *gossiper.Gossiper) {
 	router.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := ioutil.ReadAll(r.Body)
 		msg := string(body)
+		gos.PrintClientMsg(msg)
 		gos.SendRumor(msg)
 	}).Methods("POST")
 
