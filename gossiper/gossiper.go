@@ -245,9 +245,7 @@ rtimer: the period in seconds
 func (gos *Gossiper) RoutingRumors(rtimer int) {
 	for {
 		time.Sleep(time.Duration(rtimer) * time.Second)
-		serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: gos.prepRumor("")})
-		errors.CheckErr(err, "Error when encoding packet: ", false)
-		gos.sendToAll(serializedPacket, []string{})
+		gos.SendRumor("")
 	}
 }
 
@@ -446,7 +444,7 @@ func (gos *Gossiper) GetNodesName() []string {
 	return allNames
 }
 
-/*SendRumor start the rumor mongering process
+/*SendRumor start the rumor mongering process and save message in memory
 msg: the message to send
 */
 func (gos *Gossiper) SendRumor(msg string) {
