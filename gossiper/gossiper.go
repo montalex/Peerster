@@ -35,7 +35,7 @@ type Gossiper struct {
 	want                  SafeStatus
 	timers                *sync.Map
 	pastMsg               SafePast
-	lastSent              map[string]*messages.RumorMessage
+	lastSent              SafeMsgMap
 	routingTable          SafeTable
 }
 
@@ -84,7 +84,7 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 		want:         SafeStatus{m: initWant},
 		timers:       &sync.Map{},
 		pastMsg:      SafePast{messagesList: make(map[string][]*messages.RumorMessage)},
-		lastSent:     make(map[string]*messages.RumorMessage),
+		lastSent:     SafeMsgMap{messages: make(map[string]*messages.RumorMessage)},
 		routingTable: SafeTable{table: make(map[string]string)},
 	}
 }
@@ -94,6 +94,7 @@ readBuffer: the byte buffer needed to read messages
 */
 func (gos *Gossiper) ListenClient(readBuffer []byte) {
 	for {
+		fmt.Println("Start LISTENCLIENT")
 		size, _, err := gos.clientConn.ReadFromUDP(readBuffer)
 		errors.CheckErr(err, "Error when reading message: ", false)
 		if size != 0 {
@@ -127,6 +128,7 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				}
 			}
 		}
+		fmt.Println("End LISTENCLIENT")
 	}
 }
 
@@ -135,12 +137,15 @@ readBuffer: the byte buffer needed to read messages
 */
 func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 	for {
+		fmt.Println("Start LISTENPEERS")
 		size, addr, err := gos.peersConn.ReadFromUDP(readBuffer)
 		errors.CheckErr(err, "Error when reading message: ", false)
 		relayAddr := addr.String()
+		fmt.Println("ICI")
 		if size != 0 {
 			var packet messages.GossipPacket
 			protobuf.Decode(readBuffer[:size], &packet)
+			fmt.Println("LA")
 
 			//Check for Message type
 			if packet.Simple != nil {
@@ -158,17 +163,23 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 
 			} else if packet.Rumor != nil {
 				nameOrigin, id, content := packet.ReadRumorMessage()
+				fmt.Println("ICI 2")
 
 				//If message is empty -> Routing Rumor
 				if content == "" {
 					gos.AddPeer(relayAddr)
+					fmt.Println("ICI 3")
 				} else {
+					fmt.Println("ICI 4")
+
 					fmt.Println("RUMOR origin", nameOrigin, "from", relayAddr, "ID", id, "contents", content)
 					gos.addPrintPeers(relayAddr)
 				}
 
 				//Checks if this peer is in the list already else add new entry with ID = 1
 				if _, ok := gos.want.SafeRead(nameOrigin); !ok {
+					fmt.Println("ICI 5")
+
 					gos.want.SafeUpdate(nameOrigin, &messages.PeerStatus{Identifier: nameOrigin, NextID: uint32(1)})
 				}
 
@@ -177,34 +188,44 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				//If more recent then needed, we will recieve it later in order.
 				//Makes sure if people resend my own message I drop them
 				if id == gos.want.SafeID(nameOrigin) && nameOrigin != gos.name {
+					fmt.Println("ICI 6")
+
 					gos.want.SafeInc(nameOrigin)
 					gos.pastMsg.SafeAdd(nameOrigin, packet.Rumor)
 					gos.routingTable.SafeUpdate(nameOrigin, relayAddr)
+					fmt.Println("ICI 7")
 
 					//Send status answer
 					gos.sendStatus(relayAddr)
+					fmt.Println("ICI 8")
 
 					//Start rumormongering
 					gos.rumormongering(packet.Rumor, []string{relayAddr}, true)
+					fmt.Println("ICI 9")
+
 				}
 
 			} else if packet.Status != nil {
+				fmt.Println("ICI 10")
+
 				fmt.Println("STATUS from", relayAddr, packet.ReadStatusMessage())
 				gos.addPrintPeers(relayAddr)
 
 				//Checks if status recieved from waiting list
-				//TODO: Check if correct/needed.
-				timer, ok := gos.timers.Load(relayAddr)
-				if ok {
+
+				if timer, ok := gos.timers.Load(relayAddr); ok {
 					//Checks if timer was stopped or timed out if true status was recieved as an answer
 					if timer.(*time.Timer).Stop() {
 						gos.timers.Delete(relayAddr)
 					}
 				}
+				fmt.Println("ICI 11")
 
 				//Compare with own status
 				gos.compareStatus(packet.Status.Want, relayAddr)
 			} else if packet.Private != nil {
+				fmt.Println("ICI 12")
+
 				name, _, content, dest, nHop := packet.ReadPrivateMessage()
 
 				if dest == gos.name {
@@ -223,18 +244,25 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				fmt.Println("Error: MESSAGE FORM UNKNOWN. Sent by", relayAddr)
 			}
 		}
+		fmt.Println("End LISTENPEERS")
 	}
 }
 
 /*AntiEntropy makes sure everybody enventually gets all messages by sending a status message
 to a random peer every second*/
 func (gos *Gossiper) AntiEntropy() {
+	ticker := time.NewTicker(time.Second)
 	for {
-		time.Sleep(time.Second)
-		size := gos.knownPeers.SafeSize()
-		if size > 0 {
-			randomPeer := gos.knownPeers.SafeReadSpec(rand.Int() % size)
-			gos.sendStatus(randomPeer)
+		select {
+		case _ = <-ticker.C:
+			fmt.Println("Start ANTIENTROPHY")
+			size := gos.knownPeers.SafeSize()
+			if size > 0 {
+				randomPeer := gos.knownPeers.SafeReadSpec(rand.Int() % size)
+				gos.sendStatus(randomPeer)
+			}
+			fmt.Println("End ANTIENTROPHY")
+		default:
 		}
 	}
 }
@@ -243,10 +271,30 @@ func (gos *Gossiper) AntiEntropy() {
 rtimer: the period in seconds
 */
 func (gos *Gossiper) RoutingRumors(rtimer int) {
+	ticker := time.NewTicker(time.Duration(rtimer) * time.Second)
 	for {
-		time.Sleep(time.Duration(rtimer) * time.Second)
-		gos.SendRumor("")
+		select {
+		case _ = <-ticker.C:
+			fmt.Println("Start ROUTINGRUMOR")
+			gos.SendRumor("")
+			//Add to past
+			//newRumor := gos.prepRumor("")
+			//gos.pastMsg.SafeAdd(gos.name, newRumor)
+			//gos.want.SafeInc(gos.name)
+			fmt.Println("End ROUTINGRUMOR")
+		default:
+		}
 	}
+}
+
+/*Hello sends the first broadcast to all peers to make yourself known*/
+func (gos *Gossiper) Hello() {
+	rumor := gos.prepRumor("")
+	gos.pastMsg.SafeAdd(gos.name, rumor)
+	gos.want.SafeInc(gos.name)
+	serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: rumor})
+	errors.CheckErr(err, "Error when encoding packet: ", false)
+	gos.sendToAll(serializedPacket, []string{})
 }
 
 /*sendToPeer sends a packet to a given peer
@@ -254,9 +302,11 @@ packet: the packet to send
 peer: the peer's address of the form (IP:Port)
 */
 func (gos *Gossiper) sendToPeer(packet []byte, peer string) {
+	fmt.Println("Start sendToPeer")
 	peerAddr, err := net.ResolveUDPAddr("udp4", peer)
 	errors.CheckErr(err, "Error when resolving peer UDP addr: ", false)
 	gos.peersConn.WriteToUDP(packet, peerAddr)
+	fmt.Println("End sendToPeer")
 }
 
 /*sendToAll sends a packet to all peers known by the gossiper, can include an exception
@@ -264,6 +314,7 @@ packet: the packet to send
 except: a slice of peers to omit in the transmission (if none is empty)
 */
 func (gos *Gossiper) sendToAll(packet []byte, except []string) {
+	fmt.Println("Start sendToAll")
 	if gos.knownPeers.SafeSize() != 0 {
 		for _, peer := range gos.knownPeers.SafeRead() {
 			if !contains(except, peer) {
@@ -271,29 +322,37 @@ func (gos *Gossiper) sendToAll(packet []byte, except []string) {
 			}
 		}
 	}
+	fmt.Println("End sendToAll")
 }
 
 /*sendStatus sends a packet to a given peer
 peer: the peer's address of the form (IP:Port)
 */
 func (gos *Gossiper) sendStatus(peer string) {
-	wantSlice := gos.want.SafeStatusList()
-	serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Status: &messages.StatusPacket{Want: wantSlice}})
+	fmt.Println("Start sendStatus")
+	serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Status: &messages.StatusPacket{Want: gos.want.SafeStatusList()}})
+	fmt.Println("AFTER SAFE STUFF")
 	errors.CheckErr(err, "Error when encoding packet: ", false)
+	fmt.Println("AFTER Check")
 	gos.sendToPeer(serializedPacket, peer)
+	fmt.Println("End sendStatus")
 }
 
 /*addPrintPeers adds relay address if not contained already and prints all known peers*/
 func (gos *Gossiper) addPrintPeers(addr string) {
+	fmt.Println("start addPrintPeers")
 	//Adds relay address if not contained already
 	gos.AddPeer(addr)
 	fmt.Println("PEERS ", strings.Join(gos.knownPeers.SafeRead(), ","))
+	fmt.Println("end addPrintPeers")
 }
 
 /*PrintClientMsg outputs the content of the client message in the console*/
 func (gos *Gossiper) PrintClientMsg(msg string) {
+	fmt.Println("start printclientMsg")
 	fmt.Println("CLIENT MESSAGE", msg)
 	fmt.Println("PEERS", strings.Join(gos.knownPeers.SafeRead(), ","))
+	fmt.Println("end printclientMsg")
 }
 
 /*rumormongering is a simple rumoring protocol
@@ -302,10 +361,12 @@ except: a slice of peers to omit in the transmission (if none is empty) of the f
 first: set to true when starting a new rumor
 */
 func (gos *Gossiper) rumormongering(rumor *messages.RumorMessage, except []string, first bool) {
+	fmt.Println("Start rumormongering")
 	size := gos.knownPeers.SafeSize()
 	if len(except) < size {
 		randomPeer := gos.knownPeers.SafeReadSpec(rand.Int() % size)
 		for contains(except, randomPeer) {
+			fmt.Println("Bloqué dans le for-contains")
 			randomPeer = gos.knownPeers.SafeReadSpec(rand.Int() % size)
 		}
 
@@ -319,7 +380,7 @@ func (gos *Gossiper) rumormongering(rumor *messages.RumorMessage, except []strin
 		}
 
 		gos.sendToPeer(serializedPacket, randomPeer)
-		gos.lastSent[randomPeer] = rumor
+		gos.lastSent.SafeUpdate(randomPeer, rumor)
 		timer := time.AfterFunc(time.Second, func() {
 			gos.timers.Delete(randomPeer)
 			if (rand.Int() % 2) == 0 {
@@ -327,8 +388,15 @@ func (gos *Gossiper) rumormongering(rumor *messages.RumorMessage, except []strin
 			}
 			return
 		})
+
+		//Check if not already a timer for that peer, in that case stops it and stores the new one
+		if oldTimer, ok := gos.timers.Load(randomPeer); ok {
+			oldTimer.(*time.Timer).Stop()
+			gos.timers.Delete(randomPeer)
+		}
 		gos.timers.Store(randomPeer, timer)
 	}
+	fmt.Println("finish rumormongering")
 }
 
 /*compareStatus compares the given status with the gossiper's status and send the appropriate message
@@ -336,24 +404,26 @@ msgStatus: the status to compare with
 peer: the peer's address of the form (IP:Port)
 */
 func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string) {
+	fmt.Println("Start compareStatus")
 	iNeed := false
 
 	peersCopy := gos.want.MakeSafeCopy()
 
 	for _, hisStatus := range msgStatus {
-		_, ok := gos.want.SafeRead(hisStatus.Identifier)
-		if ok {
-			delete(peersCopy, hisStatus.Identifier)
+		if _, ok := gos.want.SafeRead(hisStatus.Identifier); ok {
+			peersCopy[hisStatus.Identifier] = true
 
 			if hisStatus.NextID > gos.want.SafeID(hisStatus.Identifier) {
 				iNeed = true
 			}
 			if hisStatus.NextID < gos.want.SafeID(hisStatus.Identifier) {
-				//Send him packet
-				serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: gos.pastMsg.SafeReadSpec(hisStatus.Identifier)[hisStatus.NextID-1]})
-				errors.CheckErr(err, "Error when encoding packet: ", false)
-				gos.sendToPeer(serializedPacket, peer)
-				return
+				//Send him packet if I have it
+				if list, ok := gos.pastMsg.SafeReadSpec(hisStatus.Identifier); ok {
+					serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: list[hisStatus.NextID-1]})
+					errors.CheckErr(err, "Error when encoding packet: ", false)
+					gos.sendToPeer(serializedPacket, peer)
+					return
+				}
 			}
 		} else {
 			iNeed = true
@@ -364,20 +434,15 @@ func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string)
 		}
 	}
 
-	if len(peersCopy) > 0 {
-		id := ""
-		for key, stat := range peersCopy {
-			if stat.NextID > 1 {
-				id = key
-				break
+	for key, val := range peersCopy {
+		if !val {
+			//Send him packet if I have it
+			if list, ok := gos.pastMsg.SafeReadSpec(key); ok {
+				serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: list[0]})
+				errors.CheckErr(err, "Error when encoding packet: ", false)
+				gos.sendToPeer(serializedPacket, peer)
+				return
 			}
-		}
-		if id != "" {
-			//Send him packet
-			serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: gos.pastMsg.SafeReadSpec(id)[0]})
-			errors.CheckErr(err, "Error when encoding packet: ", false)
-			gos.sendToPeer(serializedPacket, peer)
-			return
 		}
 	}
 
@@ -387,10 +452,10 @@ func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string)
 	} else {
 		fmt.Println("IN SYNC WITH", peer)
 		if (rand.Int() % 2) == 0 {
-			gos.rumormongering(gos.lastSent[peer], []string{peer}, false)
+			gos.rumormongering(gos.lastSent.SafeRead(peer), []string{peer}, false)
 		}
 	}
-
+	fmt.Println("finish compareStatus")
 }
 
 /*contains checks if the given string is contained in the given slice
@@ -418,36 +483,28 @@ func (gos *Gossiper) GetPeers() []string {
 
 /*AddPeer returns the list of known peers*/
 func (gos *Gossiper) AddPeer(newPeer string) {
+	fmt.Println("start addPeer")
 	gos.knownPeers.SafeAdd(newPeer)
+	fmt.Println("end addPeer")
 }
 
 /*GetMessages returns the list of messages recieves in the form Origin: Message*/
 func (gos *Gossiper) GetMessages() []string {
-	allMsg := make([]string, 0)
-	for key, rumList := range gos.pastMsg.SafeRead() {
-		for _, msg := range rumList {
-			//Do not display routing rumor in GUI
-			if msg.Text != "" {
-				allMsg = append(allMsg, key+": "+msg.Text)
-			}
-		}
-	}
-	return allMsg
+	fmt.Println("start getMessages")
+	return gos.pastMsg.GetSafePast()
 }
 
 /*GetNodesName returns the list of peers name for private messaging*/
 func (gos *Gossiper) GetNodesName() []string {
-	allNames := make([]string, 0)
-	for name := range gos.routingTable.SafeRead() {
-		allNames = append(allNames, name)
-	}
-	return allNames
+	fmt.Println("start GetNodeNames")
+	return gos.routingTable.GetSafeKeys()
 }
 
 /*SendRumor start the rumor mongering process and save message in memory
 msg: the message to send
 */
 func (gos *Gossiper) SendRumor(msg string) {
+	fmt.Println("Start SendRumor")
 	if gos.knownPeers.SafeSize() == 0 {
 		fmt.Println("Error: could not retransmit message, I do not know any other peers!")
 	} else {
@@ -459,15 +516,18 @@ func (gos *Gossiper) SendRumor(msg string) {
 		//Transmit to a random peer if at least one is known
 		gos.rumormongering(newRumor, []string{}, true)
 	}
+	fmt.Println("End SendRumor")
 }
 
 /*prepRumor returns the rumor message with the given text
 msg: the text of the rumor message
 */
 func (gos *Gossiper) prepRumor(msg string) *messages.RumorMessage {
+	fmt.Println("Start Preprumor")
 	rumor := messages.RumorMessage{
 		Origin: gos.name,
 		ID:     gos.want.SafeID(gos.name),
 		Text:   msg}
+	fmt.Println("End Preprumor")
 	return &rumor
 }

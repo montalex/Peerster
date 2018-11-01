@@ -30,6 +30,8 @@ func main() {
 		go gos.AntiEntropy()
 	}
 	if *rtimer > 0 {
+		//Make yourself known, first broadcast empty rumor
+		gos.Hello()
 		go gos.RoutingRumors(*rtimer)
 	}
 
