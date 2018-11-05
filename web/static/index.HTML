@@ -20,7 +20,7 @@
 
             <ul id=msgList></ul>
 
-            <form class=container id=msgBox>
+            <form class=container id=msgBox onsubmit="return false">
                 <input class=txtInput id=msgInput type="text">
                 <button id=sendButton onclick="send()">Send</button>
             </form>
@@ -35,7 +35,7 @@
 
                 <ul id=peersList></ul>
 
-                <form class=container id=msgBox>
+                <form class=container id=msgBox onsubmit="return false">
                     <input class=txtInput id=addInput type="text">
                     <button id=addButton onclick="addNode()">Add</button>
                 </form>
@@ -55,6 +55,14 @@
             getMessage();
             getNames();
         });
+
+        $(document.getElementById("nodeList")).click(function(event) {
+            var name = $(event.target).text();
+            var url_name = encodeURIComponent(name);
+            var myWindow = window.open("http://localhost:8080/private.HTML?name=" + url_name, "", "width=800, height=800");
+            var ls = document.getElementsByTagName("li");
+            myWindow.document.write(text);
+        });  
 
         function getID() {
             $.get("/id", function (data) {
@@ -122,13 +130,15 @@
                 }
             });
             setTimeout(getNodes, 1000);
-        }
+        }         
 
         function addNode() {
             var newPeer = document.getElementById("addInput").value;
             if (newPeer !== "") {
                 $.post("/node", newPeer);
             }
+            var field = document.getElementById('addInput');
+            field.value = field.defaultValue;
         }
 
         function send() {
@@ -136,6 +146,8 @@
             if (txt !== "") {
                 $.post("/message", txt);
             }
+            var field = document.getElementById('msgInput');
+            field.value = field.defaultValue;
         }
     </script>
 </body>

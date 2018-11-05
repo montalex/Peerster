@@ -1,7 +1,6 @@
 package gossiper
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/montalex/Peerster/messages"
@@ -18,18 +17,15 @@ name: the name of the peer
 newMsg: the new message
 */
 func (m *SafeMsgMap) SafeUpdate(name string, newMsg *messages.RumorMessage) {
-	fmt.Println("SafeMsgMap start SafeUpdate")
 	m.mux.Lock()
 	m.messages[name] = newMsg
 	m.mux.Unlock()
-	fmt.Println("SafeMsgMap end SafeUpdate")
 }
 
 /*SafeRead safely reads the last sent message for the given peers
 name: the name of the peer
 */
 func (m *SafeMsgMap) SafeRead(name string) *messages.RumorMessage {
-	fmt.Println("SafeMsgMap start SafeRead")
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 

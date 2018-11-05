@@ -1,0 +1,72 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Private Messaging</title>
+    <link type="text/css" rel="stylesheet" href="styles.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+</head>
+
+<body id=privateBody>
+    <div id=pchatBox>
+        <p id=pTitle>Private Messages to</p>
+
+        <ul id=pMsgList></ul>
+
+        <form class=container id=msgBox onsubmit="return false">
+            <input class=txtInput id=pMsgInput type="text" onfocus="this.value=''">
+            <button id=sendButton onclick="sendPrivate()">Send</button>
+        </form>
+
+    </div>
+</body>
+
+<script>
+    var name = getUrlVars()['name'];
+    $(document).ready(function () {  
+        var title = document.querySelector('#pTitle');
+        title.innerHTML = title.innerHTML + " " + name + ":";
+        getMessage();
+    });
+
+    function getUrlVars() {
+        var vars = {};
+        var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m,key,value) {
+            vars[key] = value;
+        });
+        return vars;
+    }
+
+    function getMessage() {
+            $.get("/private/" + name , function (data) {
+                var msg = String(data).split('\n')
+                msg.length = msg.length-1 //remove empty elem
+                var list = document.querySelector('#pMsgList');
+                list.innerHTML = ""
+
+                for (var i = 0; i < msg.length; i++) {
+                    var x = msg[i].replace('\"', '')
+                    x = x.replace('\"', '')
+
+                    var item = document.createElement('li');
+                    item.appendChild(document.createTextNode(x));
+                    list.appendChild(item);
+                }
+            });
+            setTimeout(getMessage, 1000);
+        }
+
+    function sendPrivate() {
+        var txt = document.getElementById("pMsgInput").value;
+        if (txt !== "") {
+            $.post("/private/" + name, txt);
+        }
+        var field = document.getElementById('pMsgInput');
+        field.value = field.defaultValue;
+    }
+
+</script>
+
+</html>

@@ -44,44 +44,33 @@ name: the name of the peer
 newStatus: the new status
 */
 func (s *SafeStatus) SafeUpdate(name string, newStatus *messages.PeerStatus) {
-	fmt.Println("SafeStatus start SafeUpdate")
 	s.mux.Lock()
 	s.m[name] = newStatus
 	s.mux.Unlock()
-	fmt.Println("SafeStatus end SafeUpdate")
 }
 
 /*SafeInc safely increments the ID in the peer status
 name: the name of the peer
 */
 func (s *SafeStatus) SafeInc(name string) {
-	fmt.Println("SafeStatus start SafeInc")
 	s.mux.Lock()
 	s.m[name].NextID++
 	s.mux.Unlock()
-	fmt.Println("SafeStatus end SafeInc")
 }
 
 /*SafeStatusList returns a slice of the peerStatus*/
 func (s *SafeStatus) SafeStatusList() []messages.PeerStatus {
-	fmt.Println("OUPS")
 	s.mux.RLock()
-	fmt.Println("NOPE")
 	defer s.mux.RUnlock()
-	fmt.Println("MAYBE")
 	wantSlice := []messages.PeerStatus{}
-	fmt.Println("X")
 	for _, p := range s.m {
-		fmt.Println("Y")
 		wantSlice = append(wantSlice, messages.PeerStatus{Identifier: p.Identifier, NextID: p.NextID})
 	}
-	fmt.Println("Z")
 	return wantSlice
 }
 
 /*MakeSafeCopy returns a copy of the peer status map*/
 func (s *SafeStatus) MakeSafeCopy() map[string]bool {
-	fmt.Println("SafeStatus start MakeSafeCopy")
 	s.mux.RLock()
 	defer s.mux.RUnlock()
 
@@ -89,6 +78,5 @@ func (s *SafeStatus) MakeSafeCopy() map[string]bool {
 	for key := range s.m {
 		peersCopy[key] = false
 	}
-	fmt.Println("SafeStatus end MakeSafeCopy")
 	return peersCopy
 }

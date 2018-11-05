@@ -18,13 +18,11 @@ func main() {
 	flag.Parse()
 
 	gos := gossiper.NewGossiper(*gossipAddr, *UIPort, *name, *peers, *simple)
-	clientReadBuffer := make([]byte, 4096)
-	peersReadBuffer := make([]byte, 4096)
-	go gos.ListenClient(clientReadBuffer)
-	go gos.ListenPeers(peersReadBuffer)
+
+	go gos.ListenClient(make([]byte, 4096))
 
 	if *webserver {
-		go web.Run(gos)
+		go web.Run(gos, *UIPort)
 	}
 	if !*simple {
 		go gos.AntiEntropy()
@@ -35,7 +33,5 @@ func main() {
 		go gos.RoutingRumors(*rtimer)
 	}
 
-	for {
-
-	}
+	gos.ListenPeers(make([]byte, 4096))
 }

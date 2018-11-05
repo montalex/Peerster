@@ -1,7 +1,6 @@
 package gossiper
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/montalex/Peerster/messages"
@@ -15,7 +14,6 @@ type SafePast struct {
 
 /*GetSafePast reads the whole list of past mesages in the form Origin: Message*/
 func (p *SafePast) GetSafePast() []string {
-	fmt.Println("SafePast start GetSafePast")
 	p.mux.RLock()
 	defer p.mux.RUnlock()
 
@@ -28,7 +26,6 @@ func (p *SafePast) GetSafePast() []string {
 			}
 		}
 	}
-	fmt.Println("SafePast end GetSafePast")
 	return allMsg
 }
 
@@ -36,12 +33,10 @@ func (p *SafePast) GetSafePast() []string {
 name: the name of the peer
 */
 func (p *SafePast) SafeReadSpec(name string) ([]*messages.RumorMessage, bool) {
-	fmt.Println("SafePast start SafeReadSpec")
 	p.mux.RLock()
 	defer p.mux.RUnlock()
 
 	res, ok := p.messagesList[name]
-	fmt.Println("SafePast end SafeReadSpec")
 	return res, ok
 }
 
@@ -50,9 +45,7 @@ name: the name of the peer
 newMsg: the new message
 */
 func (p *SafePast) SafeAdd(name string, newMsg *messages.RumorMessage) {
-	fmt.Println("SafePast start SafeAdd")
 	p.mux.Lock()
 	p.messagesList[name] = append(p.messagesList[name], newMsg)
 	p.mux.Unlock()
-	fmt.Println("SafePast end SafeAdd")
 }

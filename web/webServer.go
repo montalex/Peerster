@@ -4,15 +4,29 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 
+	"github.com/dedis/protobuf"
 	"github.com/gorilla/mux"
+	"github.com/montalex/Peerster/errors"
 	"github.com/montalex/Peerster/gossiper"
+	"github.com/montalex/Peerster/messages"
 )
 
 /*Run runs the server for the Peerster application*/
-func Run(gos *gossiper.Gossiper) {
+func Run(gos *gossiper.Gossiper, UIPort string) {
 	router := mux.NewRouter()
+
+	destAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+UIPort)
+	errors.CheckErr(err, "Error when resolving UDP dest address: ", true)
+
+	myAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:4285")
+	errors.CheckErr(err, "Error when resolving UDP local address: ", true)
+
+	udpConn, err := net.ListenUDP("udp", myAddr)
+	errors.CheckErr(err, "Error with UDP connection: ", true)
+	defer udpConn.Close()
 
 	router.HandleFunc("/id", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(gos.GetName())
@@ -37,7 +51,7 @@ func Run(gos *gossiper.Gossiper) {
 	}).Methods("POST")
 
 	router.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
-		for _, elem := range gos.GetMessages() {
+		for _, elem := range gos.GetRumorMessages() {
 			json.NewEncoder(w).Encode(elem)
 		}
 	}).Methods("GET")
@@ -45,8 +59,40 @@ func Run(gos *gossiper.Gossiper) {
 	router.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := ioutil.ReadAll(r.Body)
 		msg := string(body)
-		gos.PrintClientMsg(msg)
-		gos.SendRumor(msg)
+		packet := messages.GossipPacket{Simple: &messages.SimpleMessage{
+			OriginalName:  "",
+			RelayPeerAddr: "",
+			Contents:      msg}}
+		serializedPacket, err := protobuf.Encode(&packet)
+		errors.CheckErr(err, "Error when encoding packet: ", false)
+
+		_, err = udpConn.WriteToUDP(serializedPacket, destAddr)
+		errors.CheckErr(err, "Error when sending UDP msg: ", true)
+	}).Methods("POST")
+
+	router.HandleFunc("/private/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := mux.Vars(r)["name"]
+		for _, elem := range gos.GetPrivateMessages(name) {
+			json.NewEncoder(w).Encode(elem)
+		}
+	}).Methods("GET")
+
+	router.HandleFunc("/private/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := mux.Vars(r)["name"]
+		body, _ := ioutil.ReadAll(r.Body)
+		msg := string(body)
+
+		packet := messages.GossipPacket{Private: &messages.PrivateMessage{
+			Origin:      "",
+			ID:          0,
+			Text:        msg,
+			Destination: name,
+			HopLimit:    10}}
+		serializedPacket, err := protobuf.Encode(&packet)
+		errors.CheckErr(err, "Error when encoding packet: ", false)
+
+		_, err = udpConn.WriteToUDP(serializedPacket, destAddr)
+		errors.CheckErr(err, "Error when sending UDP msg: ", true)
 	}).Methods("POST")
 
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/static/")))
