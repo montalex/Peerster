@@ -1,7 +1,6 @@
 package gossiper
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/montalex/Peerster/messages"
@@ -17,12 +16,10 @@ type SafeStatus struct {
 name: the name of the peer
 */
 func (s *SafeStatus) SafeRead(name string) (*messages.PeerStatus, bool) {
-	fmt.Println("SafeStatus start SafeRead")
 	s.mux.RLock()
 	defer s.mux.RUnlock()
 
 	res, ok := s.m[name]
-	fmt.Println("SafeStatus end SafeRead")
 	return res, ok
 }
 
@@ -30,12 +27,10 @@ func (s *SafeStatus) SafeRead(name string) (*messages.PeerStatus, bool) {
 name: the name of the peer
 */
 func (s *SafeStatus) SafeID(name string) uint32 {
-	fmt.Println("SafeStatus start SafeID")
 	s.mux.RLock()
 	defer s.mux.RUnlock()
 
 	res := s.m[name]
-	fmt.Println("SafeStatus end SafeID")
 	return res.NextID
 }
 

@@ -9,7 +9,7 @@ import (
 
 	"github.com/dedis/protobuf"
 	"github.com/gorilla/mux"
-	"github.com/montalex/Peerster/errors"
+	"github.com/montalex/Peerster/errorhandler"
 	"github.com/montalex/Peerster/gossiper"
 	"github.com/montalex/Peerster/messages"
 )
@@ -19,13 +19,13 @@ func Run(gos *gossiper.Gossiper, UIPort string) {
 	router := mux.NewRouter()
 
 	destAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+UIPort)
-	errors.CheckErr(err, "Error when resolving UDP dest address: ", true)
+	errorhandler.CheckErr(err, "Error when resolving UDP dest address: ", true)
 
 	myAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:4285")
-	errors.CheckErr(err, "Error when resolving UDP local address: ", true)
+	errorhandler.CheckErr(err, "Error when resolving UDP local address: ", true)
 
 	udpConn, err := net.ListenUDP("udp", myAddr)
-	errors.CheckErr(err, "Error with UDP connection: ", true)
+	errorhandler.CheckErr(err, "Error with UDP connection: ", true)
 	defer udpConn.Close()
 
 	router.HandleFunc("/id", func(w http.ResponseWriter, r *http.Request) {
@@ -64,10 +64,10 @@ func Run(gos *gossiper.Gossiper, UIPort string) {
 			RelayPeerAddr: "",
 			Contents:      msg}}
 		serializedPacket, err := protobuf.Encode(&packet)
-		errors.CheckErr(err, "Error when encoding packet: ", false)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 
 		_, err = udpConn.WriteToUDP(serializedPacket, destAddr)
-		errors.CheckErr(err, "Error when sending UDP msg: ", true)
+		errorhandler.CheckErr(err, "Error when sending UDP msg: ", true)
 	}).Methods("POST")
 
 	router.HandleFunc("/private/{name}", func(w http.ResponseWriter, r *http.Request) {
@@ -89,10 +89,10 @@ func Run(gos *gossiper.Gossiper, UIPort string) {
 			Destination: name,
 			HopLimit:    10}}
 		serializedPacket, err := protobuf.Encode(&packet)
-		errors.CheckErr(err, "Error when encoding packet: ", false)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 
 		_, err = udpConn.WriteToUDP(serializedPacket, destAddr)
-		errors.CheckErr(err, "Error when sending UDP msg: ", true)
+		errorhandler.CheckErr(err, "Error when sending UDP msg: ", true)
 	}).Methods("POST")
 
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("./web/static/")))

@@ -1,15 +1,21 @@
 package gossiper
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dedis/protobuf"
-	"github.com/montalex/Peerster/errors"
+	"github.com/montalex/Peerster/errorhandler"
 	"github.com/montalex/Peerster/messages"
 )
 
@@ -38,6 +44,7 @@ type Gossiper struct {
 	pastPrivate           SafePast
 	lastSent              SafeMsgMap
 	routingTable          SafeTable
+	metaFiles             SafeMetaMap
 }
 
 /*NewGossiper creates a new gossiper
@@ -51,15 +58,15 @@ Returns the gossiper
 func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 	//Gossiper's outside UDP listener
 	udpPeersAddr, err := net.ResolveUDPAddr("udp4", address)
-	errors.CheckErr(err, "Error when resolving UDP address: ", true)
+	errorhandler.CheckErr(err, "Error when resolving UDP address: ", true)
 	udpPeersConn, err := net.ListenUDP("udp4", udpPeersAddr)
-	errors.CheckErr(err, "Error with UDP connection: ", true)
+	errorhandler.CheckErr(err, "Error with UDP connection: ", true)
 
 	//Gossiper's client UDP listener
 	udpClientAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+UIPort)
-	errors.CheckErr(err, "Error when resolving UDP address: ", true)
+	errorhandler.CheckErr(err, "Error when resolving UDP address: ", true)
 	udpClientConn, err := net.ListenUDP("udp4", udpClientAddr)
-	errors.CheckErr(err, "Error with UDP connection: ", true)
+	errorhandler.CheckErr(err, "Error with UDP connection: ", true)
 
 	//Gossiper's known peers list
 	peersList := make([]string, 0)
@@ -88,6 +95,7 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 		pastPrivate:  SafePast{messagesList: make(map[string][]*messages.RumorMessage)},
 		lastSent:     SafeMsgMap{messages: make(map[string]*messages.RumorMessage)},
 		routingTable: SafeTable{table: make(map[string]string)},
+		metaFiles:    SafeMetaMap{files: make(map[[32]byte]*MetaFile)},
 	}
 }
 
@@ -97,25 +105,32 @@ readBuffer: the byte buffer needed to read messages
 func (gos *Gossiper) ListenClient(readBuffer []byte) {
 	for {
 		size, _, err := gos.clientConn.ReadFromUDP(readBuffer)
-		errors.CheckErr(err, "Error when reading message: ", false)
+		errorhandler.CheckErr(err, "Error when reading message: ", false)
 		if size != 0 {
 			var packet messages.GossipPacket
 			protobuf.Decode(readBuffer[:size], &packet)
 
 			if packet.Simple != nil {
 				//Prepare packet and send it
-				_, _, msg := packet.ReadSimpleMessage()
-				gos.PrintClientMsg(msg)
-				if gos.simple {
-					packet.Simple.OriginalName = gos.name
-					packet.Simple.RelayPeerAddr = gos.peersAddr.String()
-					serializedPacket, err := protobuf.Encode(&packet)
-					errors.CheckErr(err, "Error when encoding packet: ", false)
+				name, _, msg := packet.ReadSimpleMessage()
 
-					//Transmit to all peers
-					gos.sendToAll(serializedPacket, []string{})
+				//Client asks for a file to be indexed
+				if name == "file" {
+					err = gos.indexFile(msg)
+					errorhandler.CheckErr(err, "Error indexing file: ", false)
 				} else {
-					gos.SendRumor(msg)
+					gos.PrintClientMsg(msg)
+					if gos.simple {
+						packet.Simple.OriginalName = gos.name
+						packet.Simple.RelayPeerAddr = gos.peersAddr.String()
+						serializedPacket, err := protobuf.Encode(&packet)
+						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+
+						//Transmit to all peers
+						gos.sendToAll(serializedPacket, []string{})
+					} else {
+						gos.SendRumor(msg)
+					}
 				}
 			} else {
 				_, _, msg, dest, _ := packet.ReadPrivateMessage()
@@ -123,7 +138,7 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 
 				packet.Private.Origin = gos.name
 				serializedPacket, err := protobuf.Encode(&packet)
-				errors.CheckErr(err, "Error when encoding packet: ", false)
+				errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 				if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 					gos.pastPrivate.SafeAdd(dest, &messages.RumorMessage{Origin: gos.name, ID: 0, Text: msg})
 					gos.sendToPeer(serializedPacket, destAddr)
@@ -139,7 +154,7 @@ readBuffer: the byte buffer needed to read messages
 func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 	for {
 		size, addr, err := gos.peersConn.ReadFromUDP(readBuffer)
-		errors.CheckErr(err, "Error when reading message: ", false)
+		errorhandler.CheckErr(err, "Error when reading message: ", false)
 		relayAddr := addr.String()
 		if size != 0 {
 			var packet messages.GossipPacket
@@ -154,7 +169,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				//Modify relay address & prepare packet to send
 				packet.Simple.RelayPeerAddr = gos.peersAddr.String()
 				serializedPacket, err := protobuf.Encode(&packet)
-				errors.CheckErr(err, "Error when encoding packet: ", false)
+				errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 
 				//Send to all peers except relay address
 				gos.sendToAll(serializedPacket, []string{relayAddr})
@@ -217,7 +232,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 					if nHop > 1 {
 						packet.Private.HopLimit--
 						serializedPacket, err := protobuf.Encode(&packet)
-						errors.CheckErr(err, "Error when encoding packet: ", false)
+						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 						if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 							gos.sendToPeer(serializedPacket, destAddr)
 						}
@@ -267,7 +282,7 @@ func (gos *Gossiper) Hello() {
 	gos.pastMsg.SafeAdd(gos.name, rumor)
 	gos.want.SafeInc(gos.name)
 	serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: rumor})
-	errors.CheckErr(err, "Error when encoding packet: ", false)
+	errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 	gos.sendToAll(serializedPacket, []string{})
 }
 
@@ -277,7 +292,7 @@ peer: the peer's address of the form (IP:Port)
 */
 func (gos *Gossiper) sendToPeer(packet []byte, peer string) {
 	peerAddr, err := net.ResolveUDPAddr("udp4", peer)
-	errors.CheckErr(err, "Error when resolving peer UDP addr: ", false)
+	errorhandler.CheckErr(err, "Error when resolving peer UDP addr: ", false)
 	gos.peersConn.WriteToUDP(packet, peerAddr)
 }
 
@@ -300,7 +315,7 @@ peer: the peer's address of the form (IP:Port)
 */
 func (gos *Gossiper) sendStatus(peer string) {
 	serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Status: &messages.StatusPacket{Want: gos.want.SafeStatusList()}})
-	errors.CheckErr(err, "Error when encoding packet: ", false)
+	errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 	gos.sendToPeer(serializedPacket, peer)
 }
 
@@ -331,7 +346,7 @@ func (gos *Gossiper) rumormongering(rumor *messages.RumorMessage, except []strin
 		}
 
 		serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: rumor})
-		errors.CheckErr(err, "Error when encoding packet: ", false)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 
 		if first {
 			fmt.Println("MONGERING with", randomPeer)
@@ -378,7 +393,7 @@ func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string)
 				//Send him packet if I have it
 				if list, ok := gos.pastMsg.SafeReadSpec(hisStatus.Identifier); ok {
 					serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: list[hisStatus.NextID-1]})
-					errors.CheckErr(err, "Error when encoding packet: ", false)
+					errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 					gos.sendToPeer(serializedPacket, peer)
 					return
 				}
@@ -397,7 +412,7 @@ func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string)
 			//Send him packet if I have it
 			if list, ok := gos.pastMsg.SafeReadSpec(key); ok {
 				serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: list[0]})
-				errors.CheckErr(err, "Error when encoding packet: ", false)
+				errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 				gos.sendToPeer(serializedPacket, peer)
 				return
 			}
@@ -492,4 +507,56 @@ func (gos *Gossiper) prepRumor(msg string) *messages.RumorMessage {
 		ID:     gos.want.SafeID(gos.name),
 		Text:   msg}
 	return &rumor
+}
+
+/*indexFile indexes the given file and returns the err code appropriate
+filename: the file to index
+*/
+func (gos *Gossiper) indexFile(filename string) error {
+	const buffSize = 8000
+	const sizeMax = 16769024
+
+	path, err := filepath.Abs("_SharedFiles/" + filename)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if info.Size() > sizeMax {
+		return errors.New("File too big to index")
+	}
+
+	reader := bufio.NewReader(file)
+	buffer := make([]byte, 0)
+	chunk := make([]byte, buffSize)
+	var count int
+
+	for {
+		if count, err = reader.Read(chunk); err != nil {
+			break
+		}
+		hash := sha256.Sum256(chunk[:count])
+		buffer = append(buffer, hash[:]...)
+	}
+
+	if err == io.EOF {
+		err = nil
+	} else {
+		return err
+	}
+
+	totalSize := len(buffer)
+	hashFile := sha256.Sum256(buffer)
+	meta := MetaFile{name: filename, size: totalSize, metaFile: buffer}
+	gos.metaFiles.SafeUpdate(hashFile, &meta)
+	return err
 }
