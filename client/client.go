@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"flag"
 	"net"
 
@@ -12,8 +13,9 @@ import (
 func main() {
 	var UIPort = flag.String("UIPort", "4242", "Port for UI client")
 	var dest = flag.String("dest", "", "destination for the private message")
-	var file = flag.String("file", "", "file to be indexed by the gossiper")
+	var filename = flag.String("file", "", "file to be indexed by the gossiper")
 	var msg = flag.String("msg", "", "message to be sent")
+	var request = flag.String("request", "", "request a chunk or metafile of this hash")
 	flag.Parse()
 
 	destAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+*UIPort)
@@ -46,11 +48,21 @@ func main() {
 		}
 	}
 
-	if *file != "" {
-		packet = messages.GossipPacket{Simple: &messages.SimpleMessage{
-			OriginalName:  "file",
-			RelayPeerAddr: "",
-			Contents:      *file}}
+	if *filename != "" {
+		if *request != "" {
+			hash, err := hex.DecodeString(*request)
+			errorhandler.CheckErr(err, "Error when decoding hash: ", true)
+			packet = messages.GossipPacket{DataRequest: &messages.DataRequest{
+				Origin:      *filename,
+				Destination: *dest,
+				HopLimit:    10,
+				HashValue:   hash}}
+		} else {
+			packet = messages.GossipPacket{Simple: &messages.SimpleMessage{
+				OriginalName:  "file",
+				RelayPeerAddr: "",
+				Contents:      *filename}}
+		}
 	}
 
 	serializedPacket, err := protobuf.Encode(&packet)

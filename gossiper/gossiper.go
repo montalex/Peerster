@@ -3,6 +3,7 @@ package gossiper
 import (
 	"bufio"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,8 @@ import (
 	"github.com/montalex/Peerster/errorhandler"
 	"github.com/montalex/Peerster/messages"
 )
+
+const buffSize = 8192
 
 /*Gossiper is the entity in charge of gossiping
 peersAddr: the gossiping side's UDP address
@@ -95,7 +98,7 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 		pastPrivate:  SafePast{messagesList: make(map[string][]*messages.RumorMessage)},
 		lastSent:     SafeMsgMap{messages: make(map[string]*messages.RumorMessage)},
 		routingTable: SafeTable{table: make(map[string]string)},
-		metaFiles:    SafeMetaMap{files: make(map[[32]byte]*MetaFile)},
+		metaFiles:    SafeMetaMap{meta: make(map[[32]byte]*File), data: make(map[[32]byte]*File)},
 	}
 }
 
@@ -132,17 +135,22 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 						gos.SendRumor(msg)
 					}
 				}
-			} else {
+			} else if packet.Private != nil {
 				_, _, msg, dest, _ := packet.ReadPrivateMessage()
 				gos.PrintClientMsg(msg)
-
 				packet.Private.Origin = gos.name
 				serializedPacket, err := protobuf.Encode(&packet)
 				errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 				if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 					gos.pastPrivate.SafeAdd(dest, &messages.RumorMessage{Origin: gos.name, ID: 0, Text: msg})
 					gos.sendToPeer(serializedPacket, destAddr)
+				} else {
+					fmt.Println("ERROR SENDING PRIVATE MESSAGE: I do not know", dest)
 				}
+			} else if packet.DataRequest != nil {
+				gos.clientRequest(packet)
+			} else { //Should never happen!
+				fmt.Println("Error: CLIENT MESSAGE FORM UNKNOWN")
 			}
 		}
 	}
@@ -238,6 +246,101 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 						}
 					}
 				}
+			} else if packet.DataRequest != nil {
+				name, dest, nHop, hash := packet.ReadDataRequest()
+				if dest == gos.name {
+					fmt.Println("DATA REQUEST origin", name, "hop-limit", nHop, "hash", hash)
+					var hash32 [32]byte
+					copy(hash32[:], hash)
+					data := gos.metaFiles.SafeReadChunk(hash32)
+					reply := messages.GossipPacket{DataReply: &messages.DataReply{
+						Origin:      gos.name,
+						Destination: name,
+						HopLimit:    10,
+						HashValue:   hash,
+						Data:        data}}
+					serializedPacket, err := protobuf.Encode(&reply)
+					errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+					if destAddr, ok := gos.routingTable.SafeReadSpec(name); ok {
+						gos.sendToPeer(serializedPacket, destAddr)
+					}
+				} else {
+					if nHop > 1 {
+						packet.DataRequest.HopLimit--
+						serializedPacket, err := protobuf.Encode(&packet)
+						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+						if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
+							gos.sendToPeer(serializedPacket, destAddr)
+						}
+					}
+				}
+			} else if packet.DataReply != nil {
+				name, dest, nHop, hash, data := packet.ReadDataReply()
+				var hash32 [32]byte
+				copy(hash32[:], hash)
+				hashSize := 32
+				if dest == gos.name {
+					f, ok := gos.metaFiles.SafeReadData(hash32)
+					if ok {
+						//Recieved a chunk >> Update File & send more request if needed
+						f.SafeUpdateChunk(hash32, data)
+						nChunk := f.SafeReadNextChunk()
+						s := f.SafeReadSize()
+						fmt.Println("DOWNLOADING CHUNK", nChunk-1)
+						buffer := make([]byte, s)
+						if nChunk == (s / buffSize) {
+							fmt.Println("REBUILDING FILE")
+							for i := 0; i < nChunk; i++ {
+								buffer = append(buffer, f.SafeReadMetaFile()[i*hashSize:(i+1)*hashSize]...)
+							}
+							file, err := os.Open("_Downloads/" + f.SafeReadName())
+							if err != nil {
+								fmt.Println("ERROR: Could not open file for rebuild")
+							} else {
+								_, err = file.Write(buffer)
+								if err != nil {
+									fmt.Println("ERROR: Could not write file for rebuild")
+								} else {
+									file.Close()
+								}
+							}
+
+						} else {
+							gos.sendChunkRequest(f.SafeNextChuck(), name)
+						}
+					} else {
+						f, ok = gos.metaFiles.SafeReadMeta(hash32)
+						if ok {
+							//Recieved a MetaFile >> Update File and start requsting chunks
+							f.SafeUpdateMetaFile(data)
+							nChunks := len(data) / hashSize
+							f.SafeUpdateSize(nChunks * buffSize)
+							for i := 0; i < nChunks; i++ {
+								var cHash [32]byte
+								copy(cHash[:], data[i*hashSize:(i+1)*hashSize])
+								gos.metaFiles.SafeUpdateData(cHash, f)
+							}
+							gos.sendChunkRequest(f.SafeNextChuck(), name)
+						}
+					}
+					hashStr := hex.EncodeToString(hash)
+					if timer, ok := gos.timers.Load(hashStr); ok {
+						//Checks if timer was stopped or timed out if true answer was recieved
+						if timer.(*time.Timer).Stop() {
+							gos.timers.Delete(hashStr)
+						}
+					}
+				} else {
+					if nHop > 1 {
+						packet.DataReply.HopLimit--
+						serializedPacket, err := protobuf.Encode(&packet)
+						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+						if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
+							gos.sendToPeer(serializedPacket, destAddr)
+						}
+					}
+				}
+
 			} else { //Should never happen!
 				fmt.Println("Error: MESSAGE FORM UNKNOWN. Sent by", relayAddr)
 			}
@@ -284,6 +387,53 @@ func (gos *Gossiper) Hello() {
 	serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: rumor})
 	errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 	gos.sendToAll(serializedPacket, []string{})
+}
+
+/*clientRequest sends a data request asked by the client and adds a new entry in the SafeMetaMap
+packet: the gossip packet sent by the client
+*/
+func (gos *Gossiper) clientRequest(packet messages.GossipPacket) {
+	//Create new entry in the SafeMetaMap
+	if destAddr, ok := gos.routingTable.SafeReadSpec(packet.DataRequest.Destination); ok {
+		newF := File{name: packet.DataRequest.Origin, nextChunk: 0, chunks: make(map[[32]byte][]byte)}
+		var hash32 [32]byte
+		copy(hash32[:], packet.DataRequest.HashValue)
+		gos.metaFiles.SafeUpdateMeta(hash32, &newF)
+
+		packet.DataRequest.Origin = gos.name
+		serializedPacket, err := protobuf.Encode(&packet)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+		hash := hex.EncodeToString(packet.DataRequest.HashValue)
+		timer := time.AfterFunc(5*time.Second, func() {
+			gos.timers.Delete(hash)
+			gos.clientRequest(packet)
+		})
+		gos.timers.Store(hash, timer)
+		gos.sendToPeer(serializedPacket, destAddr)
+	} else {
+		fmt.Println("ERROR SENDING DATA REQUEST: I do not know", packet.DataRequest.Destination)
+	}
+}
+
+func (gos *Gossiper) sendChunkRequest(hash []byte, dest string) {
+	if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
+		packet := messages.GossipPacket{DataRequest: &messages.DataRequest{
+			Origin:      gos.name,
+			Destination: dest,
+			HopLimit:    10,
+			HashValue:   hash}}
+		serializedPacket, err := protobuf.Encode(&packet)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+		hashStr := hex.EncodeToString(hash)
+		timer := time.AfterFunc(5*time.Second, func() {
+			gos.timers.Delete(hashStr)
+			gos.sendChunkRequest(hash, dest)
+		})
+		gos.timers.Store(hashStr, timer)
+		gos.sendToPeer(serializedPacket, destAddr)
+	} else {
+		fmt.Println("ERROR SENDING DATA REQUEST: I do not know", dest)
+	}
 }
 
 /*sendToPeer sends a packet to a given peer
@@ -513,8 +663,8 @@ func (gos *Gossiper) prepRumor(msg string) *messages.RumorMessage {
 filename: the file to index
 */
 func (gos *Gossiper) indexFile(filename string) error {
-	const buffSize = 8000
-	const sizeMax = 16769024
+	const sizeMax = 2097152 //256 * 8192
+	newF := File{name: filename, nextChunk: -1, chunks: make(map[[32]byte][]byte)}
 
 	path, err := filepath.Abs("_SharedFiles/" + filename)
 	if err != nil {
@@ -546,6 +696,8 @@ func (gos *Gossiper) indexFile(filename string) error {
 		}
 		hash := sha256.Sum256(chunk[:count])
 		buffer = append(buffer, hash[:]...)
+		gos.metaFiles.SafeUpdateData(hash, &newF)
+		newF.SafeUpdateChunk(hash, chunk[:count])
 	}
 
 	if err == io.EOF {
@@ -554,9 +706,12 @@ func (gos *Gossiper) indexFile(filename string) error {
 		return err
 	}
 
-	totalSize := len(buffer)
 	hashFile := sha256.Sum256(buffer)
-	meta := MetaFile{name: filename, size: totalSize, metaFile: buffer}
-	gos.metaFiles.SafeUpdate(hashFile, &meta)
+	var temp = make([]byte, 32)
+	copy(temp, hashFile[:])
+	fmt.Println("HASH", hex.EncodeToString(temp))
+	newF.size = len(buffer)
+	newF.metaFile = buffer
+	gos.metaFiles.SafeUpdateMeta(hashFile, &newF)
 	return err
 }

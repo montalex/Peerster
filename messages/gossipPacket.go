@@ -10,10 +10,12 @@ Rumor: if this is a rumor message
 Status: if this is a status message
 */
 type GossipPacket struct {
-	Simple  *SimpleMessage
-	Rumor   *RumorMessage
-	Status  *StatusPacket
-	Private *PrivateMessage
+	Simple      *SimpleMessage
+	Rumor       *RumorMessage
+	Status      *StatusPacket
+	Private     *PrivateMessage
+	DataRequest *DataRequest
+	DataReply   *DataReply
 }
 
 /*StatusPacket is the packet send for PeerStatus
@@ -69,6 +71,34 @@ type PrivateMessage struct {
 	HopLimit    uint32
 }
 
+/*DataRequest is used to request a file from a specific peer
+Origin: the original sender's name
+Desitnation: the destination name (ex: Alice or Bob)
+HopLimit: the maximum number of hop this message can do
+HashValue: the meta hash
+*/
+type DataRequest struct {
+	Origin      string
+	Destination string
+	HopLimit    uint32
+	HashValue   []byte
+}
+
+/*DataReply is used to send a file to a specific peer
+Origin: the original sender's name
+Desitnation: the destination name (ex: Alice or Bob)
+HopLimit: the maximum number of hop this message can do
+HashValue: the meta hash
+Data: the data (metafile or chunk)
+*/
+type DataReply struct {
+	Origin      string
+	Destination string
+	HopLimit    uint32
+	HashValue   []byte
+	Data        []byte
+}
+
 /*ReadSimpleMessage reads the simple message from a GossipPacket
 Returns the original name, the relay peer's address and the content*/
 func (packet *GossipPacket) ReadSimpleMessage() (string, string, string) {
@@ -99,4 +129,18 @@ Returns the origin's name, the ID, the content, the destination name and the hop
 func (packet *GossipPacket) ReadPrivateMessage() (string, uint32, string, string, uint32) {
 	private := *packet.Private
 	return private.Origin, private.ID, private.Text, private.Destination, private.HopLimit
+}
+
+/*ReadDataRequest reads the data request message from a GossipPacket
+Returns the origin's name, the destination name, the hop limit and the hash*/
+func (packet *GossipPacket) ReadDataRequest() (string, string, uint32, []byte) {
+	request := *packet.DataRequest
+	return request.Origin, request.Destination, request.HopLimit, request.HashValue
+}
+
+/*ReadDataReply reads the data reply message from a GossipPacket
+Returns the origin's name, the destination name, the hop limit, the hash and the data*/
+func (packet *GossipPacket) ReadDataReply() (string, string, uint32, []byte, []byte) {
+	reply := *packet.DataReply
+	return reply.Origin, reply.Destination, reply.HopLimit, reply.HashValue, reply.Data
 }
