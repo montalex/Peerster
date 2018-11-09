@@ -143,13 +143,13 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 				if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 					gos.pastPrivate.SafeAdd(dest, &messages.RumorMessage{Origin: gos.name, ID: 0, Text: msg})
-					fmt.Println("SENDING PRIVATE MESSAGE", msg, "TO", dest) //Test Gv2
+					//fmt.Println("SENDING PRIVATE MESSAGE", msg, "TO", dest) //Test Gv2
 					gos.sendToPeer(serializedPacket, destAddr)
 				} else {
 					fmt.Println("ERROR SENDING PRIVATE MESSAGE: I do not know", dest)
 				}
 			} else if packet.DataRequest != nil {
-				fmt.Println("REQUESTING filename", packet.DataRequest.Origin, "from", packet.DataRequest.Destination, "hash", hex.EncodeToString(packet.DataRequest.HashValue)) //Test Gv2
+				//fmt.Println("REQUESTING filename", packet.DataRequest.Origin, "from", packet.DataRequest.Destination, "hash", hex.EncodeToString(packet.DataRequest.HashValue)) //Test Gv2
 				gos.clientRequest(packet)
 			} else { //Should never happen!
 				fmt.Println("Error: CLIENT MESSAGE FORM UNKNOWN")
@@ -673,8 +673,8 @@ func (gos *Gossiper) prepRumor(msg string) *messages.RumorMessage {
 filename: the file to index
 */
 func (gos *Gossiper) indexFile(filename string) error {
-	fmt.Println("REQUESTING INDEXING filename", filename) //Test Gv2
-	const sizeMax = 2097152                               //256 * 8192
+	//fmt.Println("REQUESTING INDEXING filename", filename) //Test Gv2
+	const sizeMax = 2097152 //256 * 8192
 	newF := File{name: filename, nextChunk: -1, chunks: make(map[[32]byte][]byte)}
 
 	file, err := os.Open("_SharedFiles/" + filename)
