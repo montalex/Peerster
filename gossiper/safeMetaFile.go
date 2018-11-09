@@ -1,13 +1,14 @@
 package gossiper
 
 import (
+	"fmt"
 	"sync"
 )
 
 /*File represent a Gossiper's file*/
 type File struct {
 	name      string
-	size      int
+	totChunks int
 	metaFile  []byte
 	nextChunk int
 	chunks    map[[32]byte][]byte
@@ -26,6 +27,8 @@ func (f *File) SafeReadName() string {
 func (f *File) SafeNextChuck() []byte {
 	f.mux.RLock()
 	defer f.mux.RUnlock()
+	fmt.Println("f.nextChunk", f.nextChunk)
+	fmt.Print("f.metafile", f.metaFile)
 
 	var next = make([]byte, 32)
 	copy(next, f.metaFile[f.nextChunk*32:(f.nextChunk+1)*32])
@@ -34,8 +37,12 @@ func (f *File) SafeNextChuck() []byte {
 
 /*SafeUpdateMetaFile safely update the file's metaFile*/
 func (f *File) SafeUpdateMetaFile(newMF []byte) {
+	var mf = make([]byte, len(newMF))
+	fmt.Println("SIZE MF", len(newMF))
+	copy(mf, newMF)
+	fmt.Println("COPIED MF", mf)
 	f.mux.Lock()
-	f.metaFile = newMF
+	f.metaFile = mf
 	f.mux.Unlock()
 }
 
@@ -48,9 +55,9 @@ func (f *File) SafeReadMetaFile() []byte {
 }
 
 /*SafeUpdateSize safely update the file's size*/
-func (f *File) SafeUpdateSize(s int) {
+func (f *File) SafeUpdateSize(n int) {
 	f.mux.Lock()
-	f.size = s
+	f.totChunks = n
 	f.mux.Unlock()
 }
 
@@ -59,7 +66,7 @@ func (f *File) SafeReadSize() int {
 	f.mux.RLock()
 	defer f.mux.RUnlock()
 
-	return f.size
+	return f.totChunks
 }
 
 /*SafeReadNextChunk safely reads the file's next chunk*/
@@ -106,7 +113,7 @@ func (m *SafeMetaMap) SafeReadMeta(hash [32]byte) (*File, bool) {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 
-	res, ok := m.data[hash]
+	res, ok := m.meta[hash]
 	return res, ok
 }
 
@@ -127,6 +134,8 @@ func (m *SafeMetaMap) SafeReadData(hash [32]byte) (*File, bool) {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 
+	fmt.Println(m.data)
+
 	res, ok := m.data[hash]
 	return res, ok
 }
@@ -138,6 +147,7 @@ func (m *SafeMetaMap) SafeReadChunk(hash [32]byte) []byte {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 
+	fmt.Println("READING CHUNK", hash)
 	res, ok := m.data[hash]
 	if ok {
 		res.mux.RLock()
