@@ -1,5 +1,11 @@
 #mainBody {
-    font-family: 'Gill Sans', sans-serif
+    font-family: 'Gill Sans', sans-serif;
+    background-color:rgb(132, 219, 248);
+}
+
+#privateBody {
+    font-family: 'Gill Sans', sans-serif;
+    background-color:rgb(132, 219, 248);
 }
 
 #privateBody {
@@ -11,12 +17,13 @@
 #idBox {
     position: relative;
     width:98%;
+    font-weight: bold;
     height:5%;
     left: 1%;
     border: 1px solid #ccc;
     text-align: center;
     line-height: 0.5em; 
-    background-color:yellow;
+    background-color:rgb(248, 248, 73);
 }
 
 .wrapper {
@@ -38,7 +45,7 @@
     position:relative;
     height: 90%;
     width: 99%; 
-    left: 1%;
+    left: 2%;
     border: 1px solid #ccc;
     text-align: center;
     background-color:white;
@@ -46,8 +53,8 @@
 
 #pchatBox {
     position:relative;
-    height: 95%;
-    width: 95%; 
+    height: 97%;
+    width: 97%; 
     border: 1px solid #ccc;
     text-align: center;
     background-color:white;
@@ -58,7 +65,7 @@
     overflow: visible;
     height: 90%;
     width: 93%;
-    right: 0;
+    right: 0%;
     background-color:white;
 }
 
@@ -89,7 +96,7 @@
     font-size: 16px;
 }
 
-#indexButton {
+#indexButton, #requestButton {
     position: relative;
     background-color:red;
     border: 1px solid #ccc;
@@ -118,12 +125,24 @@
     position: absolute;
     align-self: center;
     width: 100%;
-    bottom:   5%;
+    bottom:   8%;
+}
+
+#requestBox {
+    position: absolute;
+    align-self: center;
+    width: 100%;
+    bottom:   3%;
 }
 
 #fileBox {
     position: absolute;
     align-self: center;
     width: 100%;
-    bottom:   0%;
+    bottom:   3%;
+}
+
+.ptxtInput {
+    align-self: center;
+    float: center;
 }

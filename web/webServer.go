@@ -1,11 +1,13 @@
 package web
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 
 	"github.com/dedis/protobuf"
 	"github.com/gorilla/mux"
@@ -102,6 +104,26 @@ func Run(gos *gossiper.Gossiper, UIPort string) {
 			Text:        msg,
 			Destination: name,
 			HopLimit:    10}}
+		serializedPacket, err := protobuf.Encode(&packet)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+
+		_, err = udpConn.WriteToUDP(serializedPacket, destAddr)
+		errorhandler.CheckErr(err, "Error when sending UDP msg: ", true)
+	}).Methods("POST")
+
+	router.HandleFunc("/request/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := mux.Vars(r)["name"]
+		body, _ := ioutil.ReadAll(r.Body)
+		msg := string(body)
+		req := strings.Split(msg, ":")
+
+		hash, err := hex.DecodeString(req[1])
+		errorhandler.CheckErr(err, "Error when decoding hash: ", true)
+		packet := messages.GossipPacket{DataRequest: &messages.DataRequest{
+			Origin:      req[0],
+			Destination: name,
+			HopLimit:    10,
+			HashValue:   hash}}
 		serializedPacket, err := protobuf.Encode(&packet)
 		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 

@@ -11,13 +11,21 @@
 
 <body id=privateBody>
     <div id=pchatBox>
-        <p id=pTitle>Private Messages to</p>
+        <b id=pTitle>Private Chat with</b>
 
         <ul id=pMsgList></ul>
 
         <form class=container id=msgBox onsubmit="return false">
             <input class=txtInput id=pMsgInput type="text" onfocus="this.value=''">
             <button id=sendButton onclick="sendPrivate()">Send</button>
+        </form>
+
+        <form class=container id=requestBox onsubmit="return false">
+            <label for="pFileInput">File Name:</label>
+            <input class=ptxtInput id=pFileInput type="text" onfocus="this.value=''">
+            <label for="pRequestInput">Request Hash:</label>
+            <input class=ptxtInput id=pRequestInput type="text" onfocus="this.value=''">
+            <button id=requestButton onclick="sendRequest()">Request</button>
         </form>
 
     </div>
@@ -64,6 +72,18 @@
             $.post("/private/" + name, txt);
         }
         var field = document.getElementById('pMsgInput');
+        field.value = field.defaultValue;
+    }
+
+    function sendRequest() {
+        var filename = document.getElementById("pFileInput").value;
+        var hash = document.getElementById("pRequestInput").value;
+        if (filename !== "" && hash !== "") {
+            $.post("/request/" + name, filename+":"+hash);
+        }
+        var field = document.getElementById('pFileInput');
+        field.value = field.defaultValue;
+        field = document.getElementById('pRequestInput');
         field.value = field.defaultValue;
     }
 

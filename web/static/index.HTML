@@ -16,7 +16,7 @@
 
     <div class=wrapper>
         <div id=chatBox>
-            <p>Messages:</p>
+            <b>Rumors:</b>
 
             <ul id=msgList></ul>
 
@@ -36,7 +36,7 @@
 
         <div id=nodeBox class=row_wrapper>
             <div id=knownNodes>
-                <p>Known Nodes:</p>
+                <b>Known Peers:</b>
 
                 <ul id=peersList></ul>
 
@@ -46,7 +46,7 @@
                 </form>
             </div>
             <div id=privateNodes>
-                <p>Private Messages:</p>
+                <b>Private Messages:</b>
 
                 <ul id=nodeList></ul>
             </div>
@@ -96,7 +96,7 @@
                     list.appendChild(item);
                 }
             });
-            setTimeout(getNodes, 1000);
+            setTimeout(getNames, 1000);
         }
 
         function getMessage() {
