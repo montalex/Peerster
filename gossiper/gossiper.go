@@ -143,11 +143,13 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 				if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 					gos.pastPrivate.SafeAdd(dest, &messages.RumorMessage{Origin: gos.name, ID: 0, Text: msg})
+					fmt.Println("SENDING PRIVATE MESSAGE", msg, "TO", dest) //Test Gv2
 					gos.sendToPeer(serializedPacket, destAddr)
 				} else {
 					fmt.Println("ERROR SENDING PRIVATE MESSAGE: I do not know", dest)
 				}
 			} else if packet.DataRequest != nil {
+				fmt.Println("REQUESTING filename", packet.DataRequest.Origin, "from", packet.DataRequest.Destination, "hash", hex.EncodeToString(packet.DataRequest.HashValue)) //Test Gv2
 				gos.clientRequest(packet)
 			} else { //Should never happen!
 				fmt.Println("Error: CLIENT MESSAGE FORM UNKNOWN")
@@ -299,9 +301,9 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 						f.SafeUpdateChunk(hash32, data)
 						nChunk := f.SafeReadNextChunk()
 						s := f.SafeReadSize()
-						fmt.Println("DOWNLOADING CHUNK", nChunk-1)
+						fmt.Println("DOWNLOADING", f.SafeReadName(), "chunk", nChunk, "from", name)
 						if nChunk == s {
-							fmt.Println("RECONSTRUCTING FILE", f.SafeReadName())
+							fmt.Println("RECONSTRUCTED file", f.SafeReadName())
 							buffer := make([]byte, 0)
 							for i := 0; i < nChunk; i++ {
 								copy(hash32[:], f.SafeReadMetaFile()[i*hashSize:(i+1)*hashSize])
@@ -318,6 +320,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 						f, ok = gos.metaFiles.SafeReadMeta(hash32)
 						if ok {
 							//Recieved a MetaFile >> Update File and start requsting chunks
+							fmt.Println("DOWNLOADING metafile of", f.SafeReadName(), "from", name)
 							f.SafeUpdateMetaFile(data)
 							nChunks := len(data) / hashSize
 							f.SafeUpdateSize(nChunks)
@@ -430,7 +433,6 @@ func (gos *Gossiper) sendChunkRequest(hash []byte, dest string) {
 			HopLimit:    10,
 			HashValue:   hash}}
 		serializedPacket, err := protobuf.Encode(&packet)
-		fmt.Println("SEND DATA REQUEST CHUNK TO", dest, "HASH", hash) //DEBUG
 		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 		hashStr := hex.EncodeToString(hash)
 		timer := time.AfterFunc(5*time.Second, func() {
@@ -671,8 +673,8 @@ func (gos *Gossiper) prepRumor(msg string) *messages.RumorMessage {
 filename: the file to index
 */
 func (gos *Gossiper) indexFile(filename string) error {
-	fmt.Println("INDEXING", filename)
-	const sizeMax = 2097152 //256 * 8192
+	fmt.Println("REQUESTING INDEXING filename", filename) //Test Gv2
+	const sizeMax = 2097152                               //256 * 8192
 	newF := File{name: filename, nextChunk: -1, chunks: make(map[[32]byte][]byte)}
 
 	file, err := os.Open("_SharedFiles/" + filename)
