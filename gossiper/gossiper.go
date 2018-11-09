@@ -250,26 +250,17 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				name, dest, nHop, hash := packet.ReadDataRequest()
 				if dest == gos.name {
 					fmt.Println("DATA REQUEST origin", name, "hop-limit", nHop, "hash", hash)
+					var data = make([]byte, 0)
 					var hash32 [32]byte
 					copy(hash32[:], hash)
-					var data []byte
-					fmt.Println("HASH IS", hash32)
-					f, ok := gos.metaFiles.SafeReadData(hash32)
 
+					f, ok := gos.metaFiles.SafeReadData(hash32)
 					if ok {
-						fmt.Println("SAFE READ CHUNK", hash32)
 						data = gos.metaFiles.SafeReadChunk(hash32)
-						fmt.Println("CHUNK SIZE", len(data))
-						fmt.Println("CHUNK VAL", data)
-						fmt.Println("SIZE REPLY DATA", len(data))
-						fmt.Println("REPLY DATA", data)
 					} else {
 						f, ok = gos.metaFiles.SafeReadMeta(hash32)
 						if ok {
-							fmt.Println("SAFE READ CHUNK", hash32)
 							data = f.SafeReadMetaFile()
-							fmt.Println("SIZE REPLY DATA", len(data))
-							fmt.Println("REPLY DATA", data)
 						}
 					}
 
@@ -298,50 +289,34 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 			} else if packet.DataReply != nil {
 				name, dest, nHop, hash, data := packet.ReadDataReply()
 				fmt.Println("DATA REPLY origin", name, "hop-limit", nHop, "hash", hash)
-				fmt.Println("CHUNK SIZE", len(data))
-				fmt.Println("CHUNK VAL", data)
 				var hash32 [32]byte
 				copy(hash32[:], hash)
 				hashSize := 32
 				if dest == gos.name {
-					fmt.Println("FOR ME")
 					f, ok := gos.metaFiles.SafeReadData(hash32)
 					if ok {
-						print("IN DATA TABLE")
 						//Recieved a chunk >> Update File & send more request if needed
 						f.SafeUpdateChunk(hash32, data)
 						nChunk := f.SafeReadNextChunk()
 						s := f.SafeReadSize()
-						fmt.Println("SIZE", s)
 						fmt.Println("DOWNLOADING CHUNK", nChunk-1)
 						if nChunk == s {
-							fmt.Println("REBUILDING FILE")
+							fmt.Println("RECONSTRUCTING FILE", f.SafeReadName())
 							buffer := make([]byte, 0)
 							for i := 0; i < nChunk; i++ {
 								copy(hash32[:], f.SafeReadMetaFile()[i*hashSize:(i+1)*hashSize])
 								buffer = append(buffer, gos.metaFiles.SafeReadChunk(hash32)...)
 							}
 							err := ioutil.WriteFile("_Downloads/"+f.SafeReadName(), buffer, 0644)
-							//file, err := os.Open("_Downloads/" + f.SafeReadName())
 							if err != nil {
 								fmt.Println("ERROR: Could not open file for rebuild")
-							} /*else {
-								_, err = file.Write(buffer)
-								if err != nil {
-									fmt.Println("ERROR: Could not write file for rebuild")
-								} else {
-									file.Close()
-								}
-							}*/
-
+							}
 						} else {
 							gos.sendChunkRequest(f.SafeNextChuck(), name)
 						}
 					} else {
-						fmt.Println("NOT IN DATA TABLE")
 						f, ok = gos.metaFiles.SafeReadMeta(hash32)
 						if ok {
-							fmt.Println("IN META TABLE")
 							//Recieved a MetaFile >> Update File and start requsting chunks
 							f.SafeUpdateMetaFile(data)
 							nChunks := len(data) / hashSize
@@ -351,12 +326,8 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 								copy(cHash[:], data[i*hashSize:(i+1)*hashSize])
 								gos.metaFiles.SafeUpdateData(cHash, f)
 							}
-							fmt.Println("ASK FOR CHUNK:", f.SafeReadNextChunk())
 							gos.sendChunkRequest(f.SafeNextChuck(), name)
-						} else {
-							fmt.Println("NOT IN META TABLE")
 						}
-
 					}
 					hashStr := hex.EncodeToString(hash)
 					if timer, ok := gos.timers.Load(hashStr); ok {
@@ -366,7 +337,6 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 						}
 					}
 				} else {
-					fmt.Println("NOT FOR ME")
 					if nHop > 1 {
 						packet.DataReply.HopLimit--
 						serializedPacket, err := protobuf.Encode(&packet)
@@ -433,11 +403,9 @@ func (gos *Gossiper) clientRequest(packet messages.GossipPacket) {
 	//Create new entry in the SafeMetaMap
 	if destAddr, ok := gos.routingTable.SafeReadSpec(packet.DataRequest.Destination); ok {
 		newF := File{name: packet.DataRequest.Origin, nextChunk: 0, chunks: make(map[[32]byte][]byte)}
-		fmt.Println(&newF)
 		var hash32 [32]byte
 		copy(hash32[:], packet.DataRequest.HashValue)
 		gos.metaFiles.SafeUpdateMeta(hash32, &newF)
-		fmt.Println(gos.metaFiles.SafeReadMeta(hash32))
 
 		packet.DataRequest.Origin = gos.name
 		serializedPacket, err := protobuf.Encode(&packet)
@@ -462,7 +430,7 @@ func (gos *Gossiper) sendChunkRequest(hash []byte, dest string) {
 			HopLimit:    10,
 			HashValue:   hash}}
 		serializedPacket, err := protobuf.Encode(&packet)
-		fmt.Println("SEND DATA REQUEST CHUNK TO", dest, "HASH", hash)
+		fmt.Println("SEND DATA REQUEST CHUNK TO", dest, "HASH", hash) //DEBUG
 		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 		hashStr := hex.EncodeToString(hash)
 		timer := time.AfterFunc(5*time.Second, func() {
@@ -703,13 +671,9 @@ func (gos *Gossiper) prepRumor(msg string) *messages.RumorMessage {
 filename: the file to index
 */
 func (gos *Gossiper) indexFile(filename string) error {
+	fmt.Println("INDEXING", filename)
 	const sizeMax = 2097152 //256 * 8192
 	newF := File{name: filename, nextChunk: -1, chunks: make(map[[32]byte][]byte)}
-
-	/*path, err := filepath.Abs("_SharedFiles/" + filename)
-	if err != nil {
-		return err
-	}*/
 
 	file, err := os.Open("_SharedFiles/" + filename)
 	if err != nil {
@@ -721,9 +685,8 @@ func (gos *Gossiper) indexFile(filename string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("INFO", info.Size())
 	if info.Size() > sizeMax {
-		return errors.New("File too big to index")
+		return errors.New("ERROR: File too big to be indexed " + filename)
 	}
 
 	reader := bufio.NewReader(file)
@@ -741,8 +704,6 @@ func (gos *Gossiper) indexFile(filename string) error {
 		buffer = append(buffer, hash[:]...)
 		gos.metaFiles.SafeUpdateData(hash, &newF)
 		newF.SafeUpdateChunk(hash, chunk[:count])
-		fmt.Println("CHUNK", chunk[:count])
-		fmt.Println("Chunk val in file", newF.chunks[hash])
 	}
 
 	if err == io.EOF {
@@ -755,14 +716,9 @@ func (gos *Gossiper) indexFile(filename string) error {
 	var temp = make([]byte, 32)
 	copy(temp, hashFile[:])
 	fmt.Println("HASH", hex.EncodeToString(temp))
-	fmt.Println("BUF SIZE", len(buffer))
 	newF.totChunks = s
-	fmt.Println("file SIZE", newF.totChunks)
-	fmt.Println("BUFF data", buffer)
 	newF.metaFile = make([]byte, len(buffer))
 	copy(newF.metaFile, buffer)
-	fmt.Println("file data", newF.metaFile)
-	fmt.Println("HASH", hashFile)
 	gos.metaFiles.SafeUpdateMeta(hashFile, &newF)
 	return err
 }

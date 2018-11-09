@@ -25,6 +25,11 @@
                 <button id=sendButton onclick="send()">Send</button>
             </form>
 
+            <form class=container id=fileBox onsubmit="return false">
+                <input class=txtInput id=fileInput type="text">
+                <button id=indexButton onclick="index()">Index</button>
+            </form>
+
         </div>
 
         <div></div>
@@ -147,6 +152,15 @@
                 $.post("/message", txt);
             }
             var field = document.getElementById('msgInput');
+            field.value = field.defaultValue;
+        }
+
+        function index() {
+            var txt = document.getElementById("fileInput").value;
+            if (txt !== "") {
+                $.post("/file", txt);
+            }
+            var field = document.getElementById('fileInput');
             field.value = field.defaultValue;
         }
     </script>

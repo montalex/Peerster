@@ -70,6 +70,20 @@ func Run(gos *gossiper.Gossiper, UIPort string) {
 		errorhandler.CheckErr(err, "Error when sending UDP msg: ", true)
 	}).Methods("POST")
 
+	router.HandleFunc("/file", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := ioutil.ReadAll(r.Body)
+		msg := string(body)
+		packet := messages.GossipPacket{Simple: &messages.SimpleMessage{
+			OriginalName:  "file",
+			RelayPeerAddr: "",
+			Contents:      msg}}
+		serializedPacket, err := protobuf.Encode(&packet)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+
+		_, err = udpConn.WriteToUDP(serializedPacket, destAddr)
+		errorhandler.CheckErr(err, "Error when sending UDP msg: ", true)
+	}).Methods("POST")
+
 	router.HandleFunc("/private/{name}", func(w http.ResponseWriter, r *http.Request) {
 		name := mux.Vars(r)["name"]
 		for _, elem := range gos.GetPrivateMessages(name) {

@@ -24,9 +24,6 @@ func main() {
 	myAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:4284")
 	errorhandler.CheckErr(err, "Error when resolving UDP local address: ", true)
 
-	//Test 1 too fast to send...needed that
-	//time.Sleep(5 * time.Millisecond)
-
 	udpConn, err := net.ListenUDP("udp", myAddr)
 	errorhandler.CheckErr(err, "Error with UDP connection: ", true)
 	defer udpConn.Close()

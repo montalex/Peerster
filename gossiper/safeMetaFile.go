@@ -27,8 +27,6 @@ func (f *File) SafeReadName() string {
 func (f *File) SafeNextChuck() []byte {
 	f.mux.RLock()
 	defer f.mux.RUnlock()
-	fmt.Println("f.nextChunk", f.nextChunk)
-	fmt.Print("f.metafile", f.metaFile)
 
 	var next = make([]byte, 32)
 	copy(next, f.metaFile[f.nextChunk*32:(f.nextChunk+1)*32])
@@ -38,9 +36,7 @@ func (f *File) SafeNextChuck() []byte {
 /*SafeUpdateMetaFile safely update the file's metaFile*/
 func (f *File) SafeUpdateMetaFile(newMF []byte) {
 	var mf = make([]byte, len(newMF))
-	fmt.Println("SIZE MF", len(newMF))
 	copy(mf, newMF)
-	fmt.Println("COPIED MF", mf)
 	f.mux.Lock()
 	f.metaFile = mf
 	f.mux.Unlock()
@@ -147,7 +143,6 @@ func (m *SafeMetaMap) SafeReadChunk(hash [32]byte) []byte {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 
-	fmt.Println("READING CHUNK", hash)
 	res, ok := m.data[hash]
 	if ok {
 		res.mux.RLock()

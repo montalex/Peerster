@@ -89,6 +89,15 @@
     font-size: 16px;
 }
 
+#indexButton {
+    position: relative;
+    background-color:red;
+    border: 1px solid #ccc;
+    color: white;
+    text-align: center;
+    font-size: 16px;
+}
+
 #addButton {
     position: relative;
     background-color: green;
@@ -110,4 +119,11 @@
     align-self: center;
     width: 100%;
     bottom:   5%;
+}
+
+#fileBox {
+    position: absolute;
+    align-self: center;
+    width: 100%;
+    bottom:   0%;
 }
