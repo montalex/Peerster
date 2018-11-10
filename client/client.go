@@ -28,6 +28,9 @@ func main() {
 	errorhandler.CheckErr(err, "Error with UDP connection: ", true)
 	defer udpConn.Close()
 
+	//Use SimpleMessage to carry a simple message (if simple mode activate), a rumor or an index command
+	//Use PrivateMessage for a private message
+	//Use DataRequest to request a file
 	var packet messages.GossipPacket
 	if *msg != "" {
 		if *dest != "" {

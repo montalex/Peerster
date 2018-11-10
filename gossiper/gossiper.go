@@ -2,6 +2,7 @@ package gossiper
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -113,6 +114,7 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 			var packet messages.GossipPacket
 			protobuf.Decode(readBuffer[:size], &packet)
 
+			//SimpleMessage can carry a simple message (if simple mode activate), a rumor or an index command
 			if packet.Simple != nil {
 				//Prepare packet and send it
 				name, _, msg := packet.ReadSimpleMessage()
@@ -143,13 +145,13 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 				if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 					gos.pastPrivate.SafeAdd(dest, &messages.RumorMessage{Origin: gos.name, ID: 0, Text: msg})
-					//fmt.Println("SENDING PRIVATE MESSAGE", msg, "TO", dest) //Test Gv2
+					fmt.Println("SENDING PRIVATE MESSAGE", msg, "TO", dest) //Test Gv2
 					gos.sendToPeer(serializedPacket, destAddr)
 				} else {
-					fmt.Println("ERROR SENDING PRIVATE MESSAGE: I do not know", dest)
+					fmt.Println("Error sending private message: I do not know", dest)
 				}
 			} else if packet.DataRequest != nil {
-				//fmt.Println("REQUESTING filename", packet.DataRequest.Origin, "from", packet.DataRequest.Destination, "hash", hex.EncodeToString(packet.DataRequest.HashValue)) //Test Gv2
+				fmt.Println("REQUESTING filename", packet.DataRequest.Origin, "from", packet.DataRequest.Destination, "hash", hex.EncodeToString(packet.DataRequest.HashValue)) //Test Gv2
 				gos.clientRequest(packet)
 			} else { //Should never happen!
 				fmt.Println("Error: CLIENT MESSAGE FORM UNKNOWN")
@@ -291,65 +293,69 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 			} else if packet.DataReply != nil {
 				name, dest, nHop, hash, data := packet.ReadDataReply()
 				fmt.Println("DATA REPLY origin", name, "hop-limit", nHop, "hash", hash)
-				var hash32 [32]byte
-				copy(hash32[:], hash)
-				hashSize := 32
-				if dest == gos.name {
-					f, ok := gos.metaFiles.SafeReadData(hash32)
-					if ok {
-						//Recieved a chunk >> Update File & send more request if needed
-						f.SafeUpdateChunk(hash32, data)
-						nChunk := f.SafeReadNextChunk()
-						s := f.SafeReadSize()
-						fmt.Println("DOWNLOADING", f.SafeReadName(), "chunk", nChunk, "from", name)
-						if nChunk == s {
-							fmt.Println("RECONSTRUCTED file", f.SafeReadName())
-							buffer := make([]byte, 0)
-							for i := 0; i < nChunk; i++ {
-								copy(hash32[:], f.SafeReadMetaFile()[i*hashSize:(i+1)*hashSize])
-								buffer = append(buffer, gos.metaFiles.SafeReadChunk(hash32)...)
-							}
-							err := ioutil.WriteFile("_Downloads/"+f.SafeReadName(), buffer, 0644)
-							if err != nil {
-								fmt.Println("ERROR: Could not open file for rebuild")
+				hashTest := make([]byte, 32)
+				x := sha256.Sum256(data)
+				copy(hashTest, x[:])
+				if bytes.Equal(hashTest, hash) {
+					var hash32 [32]byte
+					copy(hash32[:], hash)
+					hashSize := 32
+					if dest == gos.name {
+						f, ok := gos.metaFiles.SafeReadData(hash32)
+						if ok {
+							//Recieved a chunk >> Update File & send more request if needed
+							f.SafeUpdateChunk(hash32, data)
+							nChunk := f.SafeReadNextChunk()
+							s := f.SafeReadSize()
+							fmt.Println("DOWNLOADING", f.SafeReadName(), "chunk", nChunk, "from", name)
+							if nChunk == s {
+								fmt.Println("RECONSTRUCTED file", f.SafeReadName())
+								buffer := make([]byte, 0)
+								for i := 0; i < nChunk; i++ {
+									copy(hash32[:], f.SafeReadMetaFile()[i*hashSize:(i+1)*hashSize])
+									buffer = append(buffer, gos.metaFiles.SafeReadChunk(hash32)...)
+								}
+								err := ioutil.WriteFile("_Downloads/"+f.SafeReadName(), buffer, 0644)
+								if err != nil {
+									fmt.Println("ERROR: Could not open file for rebuild")
+								}
+							} else {
+								gos.sendChunkRequest(f.SafeNextChuck(), name)
 							}
 						} else {
-							gos.sendChunkRequest(f.SafeNextChuck(), name)
+							f, ok = gos.metaFiles.SafeReadMeta(hash32)
+							if ok {
+								//Recieved a MetaFile >> Update File and start requsting chunks
+								fmt.Println("DOWNLOADING metafile of", f.SafeReadName(), "from", name)
+								f.SafeUpdateMetaFile(data)
+								nChunks := len(data) / hashSize
+								f.SafeUpdateSize(nChunks)
+								for i := 0; i < nChunks; i++ {
+									var cHash [32]byte
+									copy(cHash[:], data[i*hashSize:(i+1)*hashSize])
+									gos.metaFiles.SafeUpdateData(cHash, f)
+								}
+								gos.sendChunkRequest(f.SafeNextChuck(), name)
+							}
+						}
+						hashStr := hex.EncodeToString(hash)
+						if timer, ok := gos.timers.Load(hashStr); ok {
+							//Checks if timer was stopped or timed out if true answer was recieved
+							if timer.(*time.Timer).Stop() {
+								gos.timers.Delete(hashStr)
+							}
 						}
 					} else {
-						f, ok = gos.metaFiles.SafeReadMeta(hash32)
-						if ok {
-							//Recieved a MetaFile >> Update File and start requsting chunks
-							fmt.Println("DOWNLOADING metafile of", f.SafeReadName(), "from", name)
-							f.SafeUpdateMetaFile(data)
-							nChunks := len(data) / hashSize
-							f.SafeUpdateSize(nChunks)
-							for i := 0; i < nChunks; i++ {
-								var cHash [32]byte
-								copy(cHash[:], data[i*hashSize:(i+1)*hashSize])
-								gos.metaFiles.SafeUpdateData(cHash, f)
+						if nHop > 1 {
+							packet.DataReply.HopLimit--
+							serializedPacket, err := protobuf.Encode(&packet)
+							errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+							if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
+								gos.sendToPeer(serializedPacket, destAddr)
 							}
-							gos.sendChunkRequest(f.SafeNextChuck(), name)
-						}
-					}
-					hashStr := hex.EncodeToString(hash)
-					if timer, ok := gos.timers.Load(hashStr); ok {
-						//Checks if timer was stopped or timed out if true answer was recieved
-						if timer.(*time.Timer).Stop() {
-							gos.timers.Delete(hashStr)
-						}
-					}
-				} else {
-					if nHop > 1 {
-						packet.DataReply.HopLimit--
-						serializedPacket, err := protobuf.Encode(&packet)
-						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
-						if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
-							gos.sendToPeer(serializedPacket, destAddr)
 						}
 					}
 				}
-
 			} else { //Should never happen!
 				fmt.Println("Error: MESSAGE FORM UNKNOWN. Sent by", relayAddr)
 			}
@@ -673,8 +679,8 @@ func (gos *Gossiper) prepRumor(msg string) *messages.RumorMessage {
 filename: the file to index
 */
 func (gos *Gossiper) indexFile(filename string) error {
-	//fmt.Println("REQUESTING INDEXING filename", filename) //Test Gv2
-	const sizeMax = 2097152 //256 * 8192
+	fmt.Println("REQUESTING INDEXING filename", filename) //Test Gv2
+	const sizeMax = 2097152                               //256 * 8192
 	newF := File{name: filename, nextChunk: -1, chunks: make(map[[32]byte][]byte)}
 
 	file, err := os.Open("_SharedFiles/" + filename)
