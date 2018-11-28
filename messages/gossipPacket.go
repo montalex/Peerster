@@ -10,12 +10,14 @@ Rumor: if this is a rumor message
 Status: if this is a status message
 */
 type GossipPacket struct {
-	Simple      *SimpleMessage
-	Rumor       *RumorMessage
-	Status      *StatusPacket
-	Private     *PrivateMessage
-	DataRequest *DataRequest
-	DataReply   *DataReply
+	Simple        *SimpleMessage
+	Rumor         *RumorMessage
+	Status        *StatusPacket
+	Private       *PrivateMessage
+	DataRequest   *DataRequest
+	DataReply     *DataReply
+	SearchRequest *SearchRequest
+	SearchReply   *SearchReply
 }
 
 /*StatusPacket is the packet send for PeerStatus
@@ -99,6 +101,43 @@ type DataReply struct {
 	Data        []byte
 }
 
+/*SearchRequest is used to search for a file using keywords
+Origin: the original sender's name
+Budget: amount of maximum forwarding for this request
+Keywords: the keywords to search for
+*/
+type SearchRequest struct {
+	Origin   string
+	Budget   uint64
+	Keywords []string
+}
+
+/*SearchReply is used to reply to a search request
+Origin: the original sender's name
+Desitnation: the destination name (ex: Alice or Bob)
+HopLimit: the maximum number of hop this message can do
+Results: the list of results
+*/
+type SearchReply struct {
+	Origin      string
+	Destination string
+	HopLimit    uint32
+	Results     []*SearchResult
+}
+
+/*SearchResult is used to store results of a file search
+FileName: the file's name
+MetafileHash: the file's meta hash
+ChunkMap: a map of chunks for this file
+ChunkCount: the number of chunks for the whole file
+*/
+type SearchResult struct {
+	FileName     string
+	MetafileHash []byte
+	ChunkMap     []uint64
+	ChunkCount   uint64
+}
+
 /*ReadSimpleMessage reads the simple message from a GossipPacket
 Returns the original name, the relay peer's address and the content*/
 func (packet *GossipPacket) ReadSimpleMessage() (string, string, string) {
@@ -143,4 +182,18 @@ Returns the origin's name, the destination name, the hop limit, the hash and the
 func (packet *GossipPacket) ReadDataReply() (string, string, uint32, []byte, []byte) {
 	reply := *packet.DataReply
 	return reply.Origin, reply.Destination, reply.HopLimit, reply.HashValue, reply.Data
+}
+
+/*ReadSearchRequest reads the search request message from a GossipPacket
+Returns the origin's name, the budget, and the keywords list*/
+func (packet *GossipPacket) ReadSearchRequest() (string, uint64, []string) {
+	request := *packet.SearchRequest
+	return request.Origin, request.Budget, request.Keywords
+}
+
+/*ReadSearchReply reads the search reply message from a GossipPacket
+Returns the origin's name, the destination, the hop limit and the results list*/
+func (packet *GossipPacket) ReadSearchReply() (string, string, uint32, []*SearchResult) {
+	reply := *packet.SearchReply
+	return reply.Origin, reply.Destination, reply.HopLimit, reply.Results
 }

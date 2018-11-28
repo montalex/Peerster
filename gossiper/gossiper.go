@@ -431,6 +431,10 @@ func (gos *Gossiper) clientRequest(packet messages.GossipPacket) {
 	}
 }
 
+/*sendChunkRequest send a request for a chunk
+hash: the chunk's hash value
+dest: the final destination to send to
+*/
 func (gos *Gossiper) sendChunkRequest(hash []byte, dest string) {
 	if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
 		packet := messages.GossipPacket{DataRequest: &messages.DataRequest{

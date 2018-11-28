@@ -43,9 +43,11 @@
 
 #chatBox {
     position:relative;
-    height: 90%;
+    height: 80%;
     width: 99%; 
     left: 2%;
+    overflow-x: hidden;
+    overflow-y: scroll;
     border: 1px solid #ccc;
     text-align: center;
     background-color:white;
@@ -53,8 +55,9 @@
 
 #pchatBox {
     position:relative;
-    height: 97%;
+    height: 80%;
     width: 97%; 
+    overflow: auto;
     border: 1px solid #ccc;
     text-align: center;
     background-color:white;
@@ -123,10 +126,25 @@
 
 #msgBox {
     position: absolute;
+    right: 40%;
+    width: 50%;
+    bottom:   8%;
+}
+
+#pmsgBox {
+    position: absolute;
     align-self: center;
     width: 100%;
     bottom:   8%;
 }
+
+#addBox {
+    position: absolute;
+    align-self: center;
+    width: 100%;
+    bottom:   8%;
+}
+
 
 #requestBox {
     position: absolute;
@@ -137,8 +155,8 @@
 
 #fileBox {
     position: absolute;
-    align-self: center;
-    width: 100%;
+    right: 40%;
+    width: 50%;
     bottom:   3%;
 }
 
