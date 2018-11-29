@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"net"
+	"strings"
 
 	"github.com/dedis/protobuf"
 	"github.com/montalex/Peerster/errorhandler"
@@ -16,6 +17,8 @@ func main() {
 	var filename = flag.String("file", "", "file to be indexed by the gossiper")
 	var msg = flag.String("msg", "", "message to be sent")
 	var request = flag.String("request", "", "request a chunk or metafile of this hash")
+	var keywords = flag.String("keywords", "", "keywords to research for a file")
+	var budget = flag.Uint64("budget", 2, "the budget for research, optional")
 	flag.Parse()
 
 	destAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+*UIPort)
@@ -63,6 +66,14 @@ func main() {
 				RelayPeerAddr: "",
 				Contents:      *filename}}
 		}
+	}
+
+	if *keywords != "" {
+		words := strings.Split(*keywords, ",")
+		packet = messages.GossipPacket{SearchRequest: &messages.SearchRequest{
+			Origin:   "",
+			Budget:   *budget,
+			Keywords: words}}
 	}
 
 	serializedPacket, err := protobuf.Encode(&packet)

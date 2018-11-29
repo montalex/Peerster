@@ -153,6 +153,9 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 			} else if packet.DataRequest != nil {
 				fmt.Println("REQUESTING filename", packet.DataRequest.Origin, "from", packet.DataRequest.Destination, "hash", hex.EncodeToString(packet.DataRequest.HashValue)) //Test Gv2
 				gos.clientRequest(packet)
+			} else if packet.SearchRequest != nil {
+				packet.SearchRequest.Origin = gos.name
+				gos.fileSearch(packet)
 			} else { //Should never happen!
 				fmt.Println("Error: CLIENT MESSAGE FORM UNKNOWN")
 			}
@@ -372,7 +375,7 @@ func (gos *Gossiper) AntiEntropy() {
 		case _ = <-ticker.C:
 			size := gos.knownPeers.SafeSize()
 			if size > 0 {
-				randomPeer := gos.knownPeers.SafeReadSpec(rand.Int() % size)
+				randomPeer := gos.selectRandomPeers(1)[0]
 				gos.sendStatus(randomPeer)
 			}
 		default:
@@ -456,6 +459,38 @@ func (gos *Gossiper) sendChunkRequest(hash []byte, dest string) {
 	}
 }
 
+/*fileSearch sends a search request with the available budget
+packet: the gossip packet containing the search request
+*/
+func (gos *Gossiper) fileSearch(packet messages.GossipPacket) {
+	budget := int(packet.SearchRequest.Budget)
+	nPeers := gos.knownPeers.SafeSize()
+	peers := gos.selectRandomPeers(budget)
+
+	if nPeers > budget {
+		packet.SearchRequest.Budget = 1
+		serializedPacket, err := protobuf.Encode(&packet)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+		for _, peer := range peers {
+			gos.sendToPeer(serializedPacket, peer)
+		}
+	} else {
+		available := budget / nPeers
+		rest := budget - nPeers*available
+		for i, peer := range peers {
+			if i < rest {
+				packet.SearchRequest.Budget = uint64(available + 1)
+			} else {
+				packet.SearchRequest.Budget = uint64(available)
+			}
+			serializedPacket, err := protobuf.Encode(&packet)
+			errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+			gos.sendToPeer(serializedPacket, peer)
+		}
+	}
+
+}
+
 /*sendToPeer sends a packet to a given peer
 packet: the packet to send
 peer: the peer's address of the form (IP:Port)
@@ -510,9 +545,9 @@ first: set to true when starting a new rumor
 func (gos *Gossiper) rumormongering(rumor *messages.RumorMessage, except []string, first bool) {
 	size := gos.knownPeers.SafeSize()
 	if len(except) < size {
-		randomPeer := gos.knownPeers.SafeReadSpec(rand.Int() % size)
+		randomPeer := gos.selectRandomPeers(1)[0]
 		for contains(except, randomPeer) {
-			randomPeer = gos.knownPeers.SafeReadSpec(rand.Int() % size)
+			randomPeer = gos.selectRandomPeers(1)[0]
 		}
 
 		serializedPacket, err := protobuf.Encode(&messages.GossipPacket{Rumor: rumor})
@@ -547,6 +582,7 @@ func (gos *Gossiper) rumormongering(rumor *messages.RumorMessage, except []strin
 msgStatus: the status to compare with
 peer: the peer's address of the form (IP:Port)
 */
+//TODO: sendToPeer or rumonmongering ??
 func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string) {
 	iNeed := false
 
@@ -598,6 +634,27 @@ func (gos *Gossiper) compareStatus(msgStatus []messages.PeerStatus, peer string)
 			gos.rumormongering(gos.lastSent.SafeRead(peer), []string{peer}, false)
 		}
 	}
+}
+
+/*selectRandomPeers selects n random peers from the known peers
+If n is bigger than the number of peers, returns all peers.
+n: the number of peers to select
+*/
+func (gos *Gossiper) selectRandomPeers(n int) []string {
+	res := make([]string, 0)
+	size := gos.knownPeers.SafeSize()
+
+	if n > size {
+		return gos.knownPeers.SafeRead()
+	}
+
+	for len(res) < n {
+		randomPeer := gos.knownPeers.SafeReadSpec(rand.Int() % size)
+		if !contains(res, randomPeer) {
+			res = append(res, randomPeer)
+		}
+	}
+	return res
 }
 
 /*contains checks if the given string is contained in the given slice
