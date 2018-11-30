@@ -18,7 +18,7 @@ func main() {
 	var msg = flag.String("msg", "", "message to be sent")
 	var request = flag.String("request", "", "request a chunk or metafile of this hash")
 	var keywords = flag.String("keywords", "", "keywords to research for a file")
-	var budget = flag.Uint64("budget", 2, "the budget for research, optional")
+	var budget = flag.Uint64("budget", 0, "the budget for research, optional")
 	flag.Parse()
 
 	destAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+*UIPort)

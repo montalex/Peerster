@@ -2,6 +2,7 @@ package gossiper
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -90,6 +91,24 @@ type SafeMetaMap struct {
 	meta map[[32]byte]*File
 	data map[[32]byte]*File
 	mux  sync.RWMutex
+}
+
+/*SafeCheckKeywords checks if we have a match in the keywords and returns the appropriate files
+keywords: the keywords to search for
+*/
+func (m *SafeMetaMap) SafeCheckKeywords(keywords []string) map[[32]byte]*File {
+	m.mux.RLock()
+	defer m.mux.RUnlock()
+
+	res := make(map[[32]byte]*File)
+	for h, file := range m.meta {
+		for _, word := range keywords {
+			if strings.Contains(file.SafeReadName(), word) {
+				res[h] = file
+			}
+		}
+	}
+	return res
 }
 
 /*SafeUpdateMeta safely updates the meta file map for the given hash

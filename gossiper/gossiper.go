@@ -44,11 +44,13 @@ type Gossiper struct {
 	simple                bool
 	want                  SafeStatus
 	timers                *sync.Map
+	currentSearch         *sync.Map
 	pastMsg               SafePast
 	pastPrivate           SafePast
 	lastSent              SafeMsgMap
 	routingTable          SafeTable
 	metaFiles             SafeMetaMap
+	matches               SafeMatchMap
 }
 
 /*NewGossiper creates a new gossiper
@@ -86,20 +88,22 @@ func NewGossiper(address, UIPort, name, peers string, simple bool) *Gossiper {
 	}
 
 	return &Gossiper{
-		peersAddr:    udpPeersAddr,
-		clientAddr:   udpClientAddr,
-		peersConn:    udpPeersConn,
-		clientConn:   udpClientConn,
-		name:         name,
-		knownPeers:   SafePeers{peers: peersList},
-		simple:       simple,
-		want:         SafeStatus{m: initWant},
-		timers:       &sync.Map{},
-		pastMsg:      SafePast{messagesList: make(map[string][]*messages.RumorMessage)},
-		pastPrivate:  SafePast{messagesList: make(map[string][]*messages.RumorMessage)},
-		lastSent:     SafeMsgMap{messages: make(map[string]*messages.RumorMessage)},
-		routingTable: SafeTable{table: make(map[string]string)},
-		metaFiles:    SafeMetaMap{meta: make(map[[32]byte]*File), data: make(map[[32]byte]*File)},
+		peersAddr:     udpPeersAddr,
+		clientAddr:    udpClientAddr,
+		peersConn:     udpPeersConn,
+		clientConn:    udpClientConn,
+		name:          name,
+		knownPeers:    SafePeers{peers: peersList},
+		simple:        simple,
+		want:          SafeStatus{m: initWant},
+		timers:        &sync.Map{},
+		currentSearch: &sync.Map{},
+		pastMsg:       SafePast{messagesList: make(map[string][]*messages.RumorMessage)},
+		pastPrivate:   SafePast{messagesList: make(map[string][]*messages.RumorMessage)},
+		lastSent:      SafeMsgMap{messages: make(map[string]*messages.RumorMessage)},
+		routingTable:  SafeTable{table: make(map[string]string)},
+		metaFiles:     SafeMetaMap{meta: make(map[[32]byte]*File), data: make(map[[32]byte]*File)},
+		matches:       SafeMatchMap{matches: make(map[string]*Match)},
 	}
 }
 
@@ -155,7 +159,12 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				gos.clientRequest(packet)
 			} else if packet.SearchRequest != nil {
 				packet.SearchRequest.Origin = gos.name
-				gos.fileSearch(packet)
+				if packet.SearchRequest.Budget == 0 {
+					packet.SearchRequest.Budget = 2
+					gos.fileSearch(packet, true)
+				} else {
+					gos.fileSearch(packet, false)
+				}
 			} else { //Should never happen!
 				fmt.Println("Error: CLIENT MESSAGE FORM UNKNOWN")
 			}
@@ -246,11 +255,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				} else {
 					if nHop > 1 {
 						packet.Private.HopLimit--
-						serializedPacket, err := protobuf.Encode(&packet)
-						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
-						if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
-							gos.sendToPeer(serializedPacket, destAddr)
-						}
+						gos.forwardPacket(&packet, dest)
 					}
 				}
 			} else if packet.DataRequest != nil {
@@ -286,11 +291,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				} else {
 					if nHop > 1 {
 						packet.DataRequest.HopLimit--
-						serializedPacket, err := protobuf.Encode(&packet)
-						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
-						if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
-							gos.sendToPeer(serializedPacket, destAddr)
-						}
+						gos.forwardPacket(&packet, dest)
 					}
 				}
 			} else if packet.DataReply != nil {
@@ -351,12 +352,72 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 					} else {
 						if nHop > 1 {
 							packet.DataReply.HopLimit--
-							serializedPacket, err := protobuf.Encode(&packet)
+							gos.forwardPacket(&packet, dest)
+						}
+					}
+				}
+			} else if packet.SearchRequest != nil {
+				name, budget, keywords := packet.ReadSearchRequest()
+				if name != gos.name { //TODO: check this
+					id := packet.SearchRequest.Origin + strings.Join(packet.SearchRequest.Keywords, "")
+					fmt.Println(id)
+					if _, ok := gos.currentSearch.Load(id); !ok {
+						timer := time.AfterFunc(500*time.Millisecond, func() {
+							gos.currentSearch.Delete(id)
+							return
+						})
+						gos.currentSearch.Store(id, timer)
+						fmt.Println("SEARCH REQUEST origin", name, "budget", budget, "keywords", keywords)
+						packet.SearchRequest.Budget--
+						if packet.SearchRequest.Budget > 0 {
+							gos.fileSearch(packet, false)
+						}
+
+						//Search locally & send reply
+						fileMap := gos.metaFiles.SafeCheckKeywords(keywords)
+						if len(fileMap) > 0 {
+							res := make([]*messages.SearchResult, len(fileMap))
+							for h, f := range fileMap {
+								res = append(res, gos.makeSearchResult(h, f))
+							}
+							serializedPacket, err := protobuf.Encode(&messages.GossipPacket{SearchReply: &messages.SearchReply{
+								Origin:      gos.name,
+								Destination: name,
+								HopLimit:    10,
+								Results:     res}})
 							errorhandler.CheckErr(err, "Error when encoding packet: ", false)
-							if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
+							if destAddr, ok := gos.routingTable.SafeReadSpec(name); ok {
 								gos.sendToPeer(serializedPacket, destAddr)
 							}
 						}
+					}
+				}
+			} else if packet.SearchReply != nil {
+				name, dest, nHop, searchRes := packet.ReadSearchReply()
+				if dest == gos.name {
+					for _, res := range searchRes {
+						hashStr := hex.EncodeToString(res.MetafileHash)
+						chunkList := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(res.ChunkMap)), ","), "[]")
+						fmt.Println("FOUND match", res.FileName, "at", name, "metafile="+hashStr, "chunks="+chunkList)
+
+						id := name + res.FileName
+						if match, ok := gos.matches.SafeReadMatch(id); ok {
+							match.SafeUpdateChunks(res.ChunkMap)
+						} else {
+							newM := Match{
+								fileName:  res.FileName,
+								totChunks: res.ChunkCount,
+								metaHash:  res.MetafileHash,
+								chunks:    make([]uint64, 0),
+								fullMatch: false}
+							newM.SafeUpdateChunks(res.ChunkMap)
+							gos.matches.SafeUpdateMatch(id, &newM)
+						}
+					}
+				} else {
+					if nHop > 1 {
+						packet.SearchReply.HopLimit--
+						gos.forwardPacket(&packet, dest)
 					}
 				}
 			} else { //Should never happen!
@@ -380,6 +441,14 @@ func (gos *Gossiper) AntiEntropy() {
 			}
 		default:
 		}
+	}
+}
+
+func (gos *Gossiper) forwardPacket(packet *messages.GossipPacket, dest string) {
+	serializedPacket, err := protobuf.Encode(packet)
+	errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+	if destAddr, ok := gos.routingTable.SafeReadSpec(dest); ok {
+		gos.sendToPeer(serializedPacket, destAddr)
 	}
 }
 
@@ -462,7 +531,14 @@ func (gos *Gossiper) sendChunkRequest(hash []byte, dest string) {
 /*fileSearch sends a search request with the available budget
 packet: the gossip packet containing the search request
 */
-func (gos *Gossiper) fileSearch(packet messages.GossipPacket) {
+func (gos *Gossiper) fileSearch(packet messages.GossipPacket, withIncrement bool) {
+
+	//First check if we have two full match for this search
+	if gos.matches.IsSearchOver(packet.SearchRequest.Keywords) {
+		fmt.Println("SEARCH FINISHED")
+		return
+	}
+
 	budget := int(packet.SearchRequest.Budget)
 	nPeers := gos.knownPeers.SafeSize()
 	peers := gos.selectRandomPeers(budget)
@@ -489,6 +565,39 @@ func (gos *Gossiper) fileSearch(packet messages.GossipPacket) {
 		}
 	}
 
+	if withIncrement {
+		id := packet.SearchRequest.Origin + strings.Join(packet.SearchRequest.Keywords, "")
+		timer := time.AfterFunc(time.Second, func() {
+			gos.timers.Delete(id)
+			packet.SearchRequest.Budget *= 2
+			if packet.SearchRequest.Budget <= 32 {
+				gos.fileSearch(packet, true)
+			}
+			return
+		})
+
+		//Check if not already a timer for that search, in that case stops it and stores the new one
+		if oldTimer, ok := gos.timers.Load(id); ok {
+			oldTimer.(*time.Timer).Stop()
+			gos.timers.Delete(id)
+		}
+		gos.timers.Store(id, timer)
+	}
+}
+
+func (gos *Gossiper) makeSearchResult(hash [32]byte, file *File) *messages.SearchResult {
+	count := file.SafeReadSize()
+	list := make([]uint64, 0)
+	var temp = make([]byte, 32)
+	copy(temp, hash[:])
+	for i := 1; i <= count; i++ {
+		list = append(list, uint64(i))
+	}
+	return &messages.SearchResult{
+		FileName:     file.SafeReadName(),
+		MetafileHash: temp,
+		ChunkMap:     list,
+		ChunkCount:   uint64(count)}
 }
 
 /*sendToPeer sends a packet to a given peer
@@ -664,6 +773,19 @@ p: the string to look for
 func contains(peers []string, p string) bool {
 	for _, test := range peers {
 		if test == p {
+			return true
+		}
+	}
+	return false
+}
+
+/*UINTcontains checks if the given uint64 is contained in the given slice
+list: slice of uint64 to check
+i: the uint64 to look for
+*/
+func UINTcontains(list []uint64, i uint64) bool {
+	for _, test := range list {
+		if test == i {
 			return true
 		}
 	}
