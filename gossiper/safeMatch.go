@@ -21,13 +21,29 @@ type SafeMatchMap struct {
 	mux     sync.RWMutex
 }
 
-/*SafeReadMatch safely reads the matche's map*/
+/*SafeReadMatch safely reads the matche's map
+id: the match's id*/
 func (m *SafeMatchMap) SafeReadMatch(id string) (*Match, bool) {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 
 	res, ok := m.matches[id]
 	return res, ok
+}
+
+/*FileRequest safely reads the matche's map and looks for a full match for the given file name
+fileName: the name of the file to look for*/
+func (m *SafeMatchMap) FileRequest(fileName string) (string, bool) {
+	m.mux.RLock()
+	defer m.mux.RUnlock()
+
+	for name, match := range m.matches {
+		if fileName == match.SafeReadName() && match.IsFullMatch() {
+			dest := strings.Replace(name, fileName, "", -1)
+			return dest, true
+		}
+	}
+	return "", false
 }
 
 /*SafeUpdateMatch safely updates the matche's map*/

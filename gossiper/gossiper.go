@@ -155,6 +155,13 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 					fmt.Println("Error sending private message: I do not know", dest)
 				}
 			} else if packet.DataRequest != nil {
+				if packet.DataRequest.Destination == "" {
+					if d, ok := gos.matches.FileRequest(packet.DataRequest.Origin); ok {
+						packet.DataRequest.Destination = d
+					} else {
+						fmt.Println("NO FILE WITH THIS NAME IN THE SYSTEM")
+					}
+				}
 				fmt.Println("REQUESTING filename", packet.DataRequest.Origin, "from", packet.DataRequest.Destination, "hash", hex.EncodeToString(packet.DataRequest.HashValue)) //Test Gv2
 				gos.clientRequest(packet)
 			} else if packet.SearchRequest != nil {
