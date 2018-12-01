@@ -11,6 +11,7 @@ type Match struct {
 	totChunks uint64
 	metaHash  []byte
 	chunks    []uint64
+	peerMap   map[string][]uint64
 	fullMatch bool
 	mux       sync.RWMutex
 }
@@ -33,14 +34,17 @@ func (m *SafeMatchMap) SafeReadMatch(id string) (*Match, bool) {
 
 /*FileRequest safely reads the matche's map and looks for a full match for the given file name
 fileName: the name of the file to look for*/
-func (m *SafeMatchMap) FileRequest(fileName string) (string, bool) {
+func (m *SafeMatchMap) FileRequest(fileName string, chunkNum uint64) (string, bool) {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
 
 	for name, match := range m.matches {
-		if fileName == match.SafeReadName() && match.IsFullMatch() {
-			dest := strings.Replace(name, fileName, "", -1)
-			return dest, true
+		if fileName == name && match.IsFullMatch() {
+			for pName, list := range match.peerMap {
+				if UINTcontains(list, chunkNum) {
+					return pName, true
+				}
+			}
 		}
 	}
 	return "", false
@@ -92,9 +96,17 @@ func (m *Match) SafeUpdateMetaHash(newMF []byte) {
 }
 
 /*SafeUpdateChunks safely update the match's chunks*/
-func (m *Match) SafeUpdateChunks(newC []uint64) {
+func (m *Match) SafeUpdateChunks(id string, newC []uint64) {
 	m.mux.Lock()
 	for _, i := range newC {
+		if pC, ok := m.peerMap[id]; ok {
+			if !UINTcontains(pC, i) {
+				m.peerMap[id] = append(m.peerMap[id], i)
+			}
+		} else {
+			m.peerMap[id] = []uint64{i}
+		}
+
 		if !UINTcontains(m.chunks, i) {
 			m.chunks = append(m.chunks, i)
 		}

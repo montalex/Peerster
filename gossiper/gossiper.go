@@ -156,7 +156,8 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				}
 			} else if packet.DataRequest != nil {
 				if packet.DataRequest.Destination == "" {
-					if d, ok := gos.matches.FileRequest(packet.DataRequest.Origin); ok {
+					if d, ok := gos.matches.FileRequest(packet.DataRequest.Origin, 1); ok {
+						fmt.Println("DEST", d)
 						packet.DataRequest.Destination = d
 					} else {
 						fmt.Println("NO FILE WITH THIS NAME IN THE SYSTEM")
@@ -331,6 +332,9 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 									fmt.Println("ERROR: Could not open file for rebuild")
 								}
 							} else {
+								if d, ok := gos.matches.FileRequest(f.SafeReadName(), uint64(nChunk)); ok {
+									name = d
+								}
 								gos.sendChunkRequest(f.SafeNextChuck(), name)
 							}
 						} else {
@@ -365,7 +369,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 				}
 			} else if packet.SearchRequest != nil {
 				name, budget, keywords := packet.ReadSearchRequest()
-				if name != gos.name { //TODO: check this
+				if name != gos.name {
 					id := packet.SearchRequest.Origin + strings.Join(packet.SearchRequest.Keywords, "")
 					fmt.Println(id)
 					if _, ok := gos.currentSearch.Load(id); !ok {
@@ -407,18 +411,18 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 						chunkList := strings.Trim(strings.Join(strings.Fields(fmt.Sprint(res.ChunkMap)), ","), "[]")
 						fmt.Println("FOUND match", res.FileName, "at", name, "metafile="+hashStr, "chunks="+chunkList)
 
-						id := name + res.FileName
-						if match, ok := gos.matches.SafeReadMatch(id); ok {
-							match.SafeUpdateChunks(res.ChunkMap)
+						if match, ok := gos.matches.SafeReadMatch(res.FileName); ok {
+							match.SafeUpdateChunks(name, res.ChunkMap)
 						} else {
 							newM := Match{
 								fileName:  res.FileName,
 								totChunks: res.ChunkCount,
 								metaHash:  res.MetafileHash,
 								chunks:    make([]uint64, 0),
+								peerMap:   make(map[string][]uint64),
 								fullMatch: false}
-							newM.SafeUpdateChunks(res.ChunkMap)
-							gos.matches.SafeUpdateMatch(id, &newM)
+							newM.SafeUpdateChunks(name, res.ChunkMap)
+							gos.matches.SafeUpdateMatch(res.FileName, &newM)
 						}
 					}
 				} else {
