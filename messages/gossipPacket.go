@@ -1,6 +1,10 @@
 package messages
 
-import "strconv"
+import (
+	"crypto/sha256"
+	"encoding/binary"
+	"strconv"
+)
 
 /*GossipPacket is only type of packets sent between peers
 !! Can only send one of the following at a time !!
@@ -18,6 +22,8 @@ type GossipPacket struct {
 	DataReply     *DataReply
 	SearchRequest *SearchRequest
 	SearchReply   *SearchReply
+	TxPublish     *TxPublish
+	BlockPublish  *BlockPublish
 }
 
 /*StatusPacket is the packet send for PeerStatus
@@ -138,6 +144,46 @@ type SearchResult struct {
 	ChunkCount   uint64
 }
 
+/*TxPublish is used to publish transactions in the gossiping process
+File: the published file
+HopLimit: the maximum number of hop this message can do
+*/
+type TxPublish struct {
+	File     File
+	HopLimit uint32
+}
+
+/*File represents a gossiper's file
+Name: the name of the file
+Size: the size of the file
+MetafileHash: the file's metahash
+*/
+type File struct {
+	Name         string
+	Size         int64
+	MetafileHash []byte
+}
+
+/*BlockPublish is used to publish blocks in the gossiping process
+Block: the published block
+HopLimit: the maximum number of hop this message can do
+*/
+type BlockPublish struct {
+	Block    Block
+	HopLimit uint32
+}
+
+/*Block represents a block in the chain
+PrevHash: the previous hash in the chain
+Nonce: the new Nonce
+Transaction: the list of accepted transactions
+*/
+type Block struct {
+	PrevHash     [32]byte
+	Nonce        [32]byte
+	Transactions []TxPublish
+}
+
 /*ReadSimpleMessage reads the simple message from a GossipPacket
 Returns the original name, the relay peer's address and the content*/
 func (packet *GossipPacket) ReadSimpleMessage() (string, string, string) {
@@ -196,4 +242,28 @@ Returns the origin's name, the destination, the hop limit and the results list*/
 func (packet *GossipPacket) ReadSearchReply() (string, string, uint32, []*SearchResult) {
 	reply := *packet.SearchReply
 	return reply.Origin, reply.Destination, reply.HopLimit, reply.Results
+}
+
+/*Hash function for blocks*/
+func (b *Block) Hash() (out [32]byte) {
+	h := sha256.New()
+	h.Write(b.PrevHash[:])
+	h.Write(b.Nonce[:])
+	binary.Write(h, binary.LittleEndian, uint32(len(b.Transactions)))
+	for _, t := range b.Transactions {
+		th := t.Hash()
+		h.Write(th[:])
+	}
+	copy(out[:], h.Sum(nil))
+	return
+}
+
+/*Hash function for transaction*/
+func (t *TxPublish) Hash() (out [32]byte) {
+	h := sha256.New()
+	binary.Write(h, binary.LittleEndian, uint32(len(t.File.Name)))
+	h.Write([]byte(t.File.Name))
+	h.Write(t.File.MetafileHash)
+	copy(out[:], h.Sum(nil))
+	return
 }

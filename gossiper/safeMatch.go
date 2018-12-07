@@ -1,6 +1,7 @@
 package gossiper
 
 import (
+	"math/rand"
 	"strings"
 	"sync"
 )
@@ -37,15 +38,20 @@ fileName: the name of the file to look for*/
 func (m *SafeMatchMap) FileRequest(fileName string, chunkNum uint64) (string, bool) {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
+	temp := make([]string, 0)
 
 	for name, match := range m.matches {
 		if fileName == name && match.IsFullMatch() {
 			for pName, list := range match.peerMap {
 				if UINTcontains(list, chunkNum) {
-					return pName, true
+					temp = append(temp, pName)
 				}
 			}
 		}
+	}
+	size := len(temp)
+	if size > 0 {
+		return temp[rand.Int()%size], true
 	}
 	return "", false
 }
