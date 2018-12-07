@@ -1,9 +1,4 @@
-#mainBody {
-    font-family: 'Gill Sans', sans-serif;
-    background-color:rgb(132, 219, 248);
-}
-
-#privateBody {
+#mainBody, #privateBody, #matchBody {
     font-family: 'Gill Sans', sans-serif;
     background-color:rgb(132, 219, 248);
 }
@@ -43,7 +38,7 @@
 
 #chatBox {
     position:relative;
-    height: 80%;
+    height: 70%;
     width: 99%; 
     left: 2%;
     overflow-x: hidden;
@@ -53,7 +48,7 @@
     background-color:white;
 }
 
-#pchatBox {
+#pchatBox, #matchBox {
     position:relative;
     height: 80%;
     width: 97%; 
@@ -108,6 +103,15 @@
     font-size: 16px;
 }
 
+#keyButton {
+    position: relative;
+    background-color:green;
+    border: 1px solid #ccc;
+    color: white;
+    text-align: center;
+    font-size: 16px;
+}
+
 #addButton {
     position: relative;
     background-color: green;
@@ -128,7 +132,7 @@
     position: absolute;
     right: 40%;
     width: 50%;
-    bottom:   8%;
+    bottom:   13%;
 }
 
 #pmsgBox {
@@ -150,10 +154,17 @@
     position: absolute;
     align-self: center;
     width: 100%;
-    bottom:   3%;
+    bottom:  3%;
 }
 
 #fileBox {
+    position: absolute;
+    right: 40%;
+    width: 50%;
+    bottom:   8%;
+}
+
+#keyBox {
     position: absolute;
     right: 40%;
     width: 50%;

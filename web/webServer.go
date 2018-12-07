@@ -111,6 +111,33 @@ func Run(gos *gossiper.Gossiper, UIPort string) {
 		errorhandler.CheckErr(err, "Error when sending UDP msg: ", true)
 	}).Methods("POST")
 
+	router.HandleFunc("/match/{keywords}", func(w http.ResponseWriter, r *http.Request) {
+		keywords := mux.Vars(r)["keywords"]
+		words := strings.Split(keywords, ",")
+		for _, name := range gos.GetMatches(words) {
+			json.NewEncoder(w).Encode(name)
+		}
+	}).Methods("GET")
+
+	router.HandleFunc("/match/{keywords}", func(w http.ResponseWriter, r *http.Request) {
+		keywords := mux.Vars(r)["keywords"]
+		words := strings.Split(keywords, ",")
+		packet := messages.GossipPacket{SearchRequest: &messages.SearchRequest{
+			Origin:   "",
+			Budget:   0,
+			Keywords: words}}
+		serializedPacket, err := protobuf.Encode(&packet)
+		errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+
+		_, err = udpConn.WriteToUDP(serializedPacket, destAddr)
+		errorhandler.CheckErr(err, "Error when sending UDP msg: ", true)
+	}).Methods("POST")
+
+	router.HandleFunc("/download/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := mux.Vars(r)["name"]
+		gos.Download(name)
+	}).Methods("POST")
+
 	router.HandleFunc("/request/{name}", func(w http.ResponseWriter, r *http.Request) {
 		name := mux.Vars(r)["name"]
 		body, _ := ioutil.ReadAll(r.Body)

@@ -1,0 +1,61 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Search Results</title>
+    <link type="text/css" rel="stylesheet" href="styles.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+</head>
+
+<body id=matchBody>
+    <div id=matchBox>
+            <b id=pTitle>Match for search request</b>
+
+            <ul id=matchList></ul>
+    
+    </div>
+</body>
+
+<script>
+        var keywords = getUrlVars()['keywords'];
+        $(document).ready(function () {  
+            var title = document.querySelector('#pTitle');
+            title.innerHTML = title.innerHTML + " " + keywords + ":";
+            getResults();
+        });
+    
+        function getUrlVars() {
+            var vars = {};
+            var parts = window.location.href.replace(/[?&]+([^=&]+)=([^&]*)/gi, function(m,key,value) {
+                vars[key] = value;
+            });
+            return vars;
+        }
+
+        $(document.getElementById("matchList")).click(function(event) {
+            var name = $(event.target).text();
+            console.log("NAME:"+name);
+            $.post("/download/"+name);
+        }); 
+
+        function getResults() {
+            $.get("/match/" + keywords , function (data) {
+                var msg = String(data).split(',')
+                //msg.length = msg.length-1 //remove empty elem
+                var list = document.querySelector('#matchList');
+                list.innerHTML = ""
+
+                for (var i = 0; i < msg.length; i++) {
+                    var x = msg[i].replace('\"', '')
+                    x = x.replace('\"', '')
+
+                    var item = document.createElement('li');
+                    item.appendChild(document.createTextNode(x));
+                    list.appendChild(item);
+                }
+            });
+            setTimeout(getResults, 1000);
+        }
+ </script>

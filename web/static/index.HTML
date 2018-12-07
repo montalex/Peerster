@@ -30,7 +30,10 @@
             <button id=indexButton onclick="index()">Index</button>
         </form>
 
-        
+        <form class=container id=keyBox onsubmit="return false">
+            <input class=txtInput id=keyInput type="text">
+            <button id=keyButton onclick="openSearch()">Search</button>
+        </form>      
 
         <div></div>
 
@@ -52,6 +55,7 @@
             </div>
         </div>
     </div>
+</body>
 
     <script>
         $(document).ready(function () {
@@ -65,9 +69,22 @@
             var name = $(event.target).text();
             var url_name = encodeURIComponent(name);
             var myWindow = window.open("http://localhost:8080/private.HTML?name=" + url_name, "", "width=800, height=800");
-            var ls = document.getElementsByTagName("li");
             myWindow.document.write(text);
         });  
+
+        function openSearch() { 
+            var keyWords = document.getElementById("keyInput").value;
+            if(keyWords !== "") {
+                search(keyWords)
+                var myWindow = window.open("http://localhost:8080/match.HTML?keywords=" + keyWords, "", "width=800, height=400");
+            } 
+            var field = document.getElementById('keyInput');
+            field.value = field.defaultValue;
+        }
+
+        function search(keywords) {
+            $.post("/match/"+keywords);
+        }
 
         function getID() {
             $.get("/id", function (data) {
@@ -164,6 +181,5 @@
             field.value = field.defaultValue;
         }
     </script>
-</body>
 
 </html>

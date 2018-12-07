@@ -84,6 +84,40 @@ func (m *SafeMatchMap) IsSearchOver(keywords []string) bool {
 	return false
 }
 
+/*GetMatches retrive full matches for this search
+keywords: the given keywords
+*/
+func (m *SafeMatchMap) GetMatches(keywords []string) []string {
+	m.mux.RLock()
+	defer m.mux.RUnlock()
+
+	res := make([]string, 0)
+	for _, match := range m.matches {
+		for _, word := range keywords {
+			if strings.Contains(match.SafeReadName(), word) {
+				if match.IsFullMatch() {
+					res = append(res, match.SafeReadName())
+				}
+			}
+		}
+	}
+	return res
+}
+
+/*GetHash return the hash for the given name*/
+func (m *SafeMatchMap) GetHash(name string) []byte {
+	m.mux.RLock()
+	defer m.mux.RUnlock()
+
+	res := make([]byte, 32)
+	for _, match := range m.matches {
+		if name == match.SafeReadName() && match.IsFullMatch() {
+			copy(res, match.metaHash)
+		}
+	}
+	return res
+}
+
 /*SafeReadName safely reads the file's name*/
 func (m *Match) SafeReadName() string {
 	m.mux.RLock()

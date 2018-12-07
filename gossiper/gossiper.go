@@ -469,8 +469,7 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 							//TODO: Make the funcking print correct
 							fmt.Println("CHAIN", bHash)
 						}
-					}
-				*/
+					}*/
 			} else { //Should never happen!
 				fmt.Println("Error: MESSAGE FORM UNKNOWN. Sent by", relayAddr)
 			}
@@ -530,10 +529,10 @@ func (gos *Gossiper) Hello() {
 /*Mine is the Mining function for the gossiper*/
 func (gos *Gossiper) Mine() {
 	for {
+		fmt.Println("MINING")
 		gos.currentBlock.mux.Lock()
 		if gos.currentBlock.b == nil {
-			gos.currentBlock.b.Transactions = make([]messages.TxPublish, 0)
-
+			gos.currentBlock.b = &messages.Block{Transactions: make([]messages.TxPublish, 0)}
 		}
 		gos.currentBlock.b.PrevHash = gos.chain.GetPrevHash()
 		gos.currentBlock.mux.Unlock()
@@ -626,7 +625,10 @@ func (gos *Gossiper) fileSearch(packet messages.GossipPacket, withIncrement bool
 	budget := int(packet.SearchRequest.Budget)
 	nPeers := gos.knownPeers.SafeSize()
 	peers := gos.selectRandomPeers(budget)
-
+	if nPeers == 0 {
+		fmt.Println("NO PEERS TO SEND SEARCH", packet.SearchRequest.Keywords)
+		return
+	}
 	if nPeers > budget {
 		packet.SearchRequest.Budget = 1
 		serializedPacket, err := protobuf.Encode(&packet)
@@ -911,6 +913,30 @@ func (gos *Gossiper) GetPrivateMessages(name string) []string {
 /*GetNodesName returns the list of peers name for private messaging*/
 func (gos *Gossiper) GetNodesName() []string {
 	return gos.routingTable.GetSafeKeys()
+}
+
+/*GetMatches retrive full matches for this search
+keywords: the given keywords
+*/
+func (gos *Gossiper) GetMatches(keywords []string) []string {
+	return gos.matches.GetMatches(keywords)
+}
+
+/*Download downloads the given filename
+name: the filename
+*/
+func (gos *Gossiper) Download(name string) {
+	hash := gos.matches.GetHash(name)
+	packet := messages.GossipPacket{DataRequest: &messages.DataRequest{
+		Origin:      gos.name,
+		Destination: "",
+		HopLimit:    10,
+		HashValue:   hash}}
+
+	if d, ok := gos.matches.FileRequest(name, 1); ok {
+		packet.DataRequest.Destination = d
+		gos.clientRequest(&packet, name)
+	}
 }
 
 /*SendRumor start the rumor mongering process and save message in memory
