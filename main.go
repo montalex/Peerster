@@ -20,7 +20,7 @@ func main() {
 	gos := gossiper.NewGossiper(*gossipAddr, *UIPort, *name, *peers, *simple)
 
 	go gos.ListenClient(make([]byte, 65535))
-	//go gos.Mine()
+	go gos.Mine()
 
 	if *webserver {
 		go web.Run(gos, *UIPort)

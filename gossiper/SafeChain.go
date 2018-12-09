@@ -3,6 +3,7 @@ package gossiper
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"sync"
 
 	"github.com/montalex/Peerster/messages"
@@ -41,7 +42,7 @@ func (c *CurrentBlock) SafeUpdateBlock(newT *messages.TxPublish) {
 /*SafeClean safetly cleans the current transaction list*/
 func (c *CurrentBlock) SafeClean() {
 	c.mux.Lock()
-	c.b.Transactions = make([]messages.TxPublish, 0)
+	c.b.Transactions = nil
 	c.mux.Unlock()
 }
 
@@ -80,10 +81,32 @@ func (n *ClaimedNames) IsNameClaimed(name string) bool {
 func (b *BlockChain) GetPrevHash() (ret [32]byte) {
 	b.mux.RLock()
 	defer b.mux.RUnlock()
-	if b.size != 0 {
-		copy(ret[:], b.leafHash[:])
-	}
+	copy(ret[:], b.leafHash[:])
 	return
+}
+
+/*GetChainPrint returns the print for the chain*/
+func (b *BlockChain) GetChainPrint() string {
+	b.mux.RLock()
+	defer b.mux.RUnlock()
+
+	res := ""
+	hash := b.leafHash
+	for !bytes.Equal(hash[:], b.rootHash[:]) {
+		current := b.chain[hash]
+		newB := hex.EncodeToString(hash[:]) + ":" + hex.EncodeToString(current.PrevHash[:]) + ":"
+		size := len(current.Transactions)
+		for i, t := range current.Transactions {
+			if i == (size - 1) {
+				newB += t.File.Name
+			} else {
+				newB += t.File.Name + ","
+			}
+		}
+		res += newB + " "
+		hash = current.PrevHash
+	}
+	return res
 }
 
 /*SafeUpdateChain safely updates the blockchains with the given block

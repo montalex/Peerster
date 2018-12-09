@@ -131,9 +131,9 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 
 				//Client asks for a file to be indexed
 				if name == "file" {
-					_, err := gos.indexFile(msg)
+					f, err := gos.indexFile(msg)
 					errorhandler.CheckErr(err, "Error indexing file: ", false)
-					/*if f != nil {
+					if f != nil {
 						size := f.SafeReadSize()
 						newPacket := messages.GossipPacket{TxPublish: &messages.TxPublish{
 							File: messages.File{
@@ -141,10 +141,11 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 								Size:         int64(size),
 								MetafileHash: f.SafeReadMetaFile()},
 							HopLimit: 10}}
+						gos.currentBlock.SafeUpdateBlock(newPacket.TxPublish)
 						serializedPacket, err := protobuf.Encode(&newPacket)
 						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 						gos.sendToAll(serializedPacket, []string{})
-					}*/
+					}
 				} else {
 					gos.PrintClientMsg(msg)
 					if gos.simple {
@@ -187,6 +188,7 @@ func (gos *Gossiper) ListenClient(readBuffer []byte) {
 				}
 			} else if packet.SearchRequest != nil {
 				packet.SearchRequest.Origin = gos.name
+				fmt.Println("SEARCHING for keywords", strings.Join(packet.SearchRequest.Keywords[:], ","), "with budget", packet.SearchRequest.Budget) //Test Gv2
 				if packet.SearchRequest.Budget == 0 {
 					packet.SearchRequest.Budget = 2
 					gos.fileSearch(packet, true)
@@ -448,28 +450,27 @@ func (gos *Gossiper) ListenPeers(readBuffer []byte) {
 						gos.forwardPacket(&packet, dest)
 					}
 				}
-				/*} else if packet.TxPublish != nil {
-					if !gos.currentBlock.WasSeen(packet.TxPublish) && !gos.claimedNames.IsNameClaimed(packet.TxPublish.File.Name) {
-						gos.claimedNames.SafeUpdateNames(packet.TxPublish.File.Name)
-						gos.currentBlock.SafeUpdateBlock(packet.TxPublish)
-						if packet.TxPublish.HopLimit > 1 {
-							packet.TxPublish.HopLimit--
-							serializedPacket, err := protobuf.Encode(packet)
-							errorhandler.CheckErr(err, "Error when encoding packet: ", false)
-							gos.sendToAll(serializedPacket, []string{})
-						}
+			} else if packet.TxPublish != nil {
+				if !gos.currentBlock.WasSeen(packet.TxPublish) && !gos.claimedNames.IsNameClaimed(packet.TxPublish.File.Name) {
+					gos.claimedNames.SafeUpdateNames(packet.TxPublish.File.Name)
+					gos.currentBlock.SafeUpdateBlock(packet.TxPublish)
+					if packet.TxPublish.HopLimit > 1 {
+						packet.TxPublish.HopLimit--
+						serializedPacket, err := protobuf.Encode(packet)
+						errorhandler.CheckErr(err, "Error when encoding packet: ", false)
+						gos.sendToAll(serializedPacket, []string{})
 					}
-				} else if packet.BlockPublish != nil {
-					bHash := packet.BlockPublish.Block.Hash()
-					if gos.chain.ParentSeen(&packet.BlockPublish.Block) {
-						if bHash[31] == 0 && bHash[30] == 0 {
-							gos.chain.SafeUpdateChain(&packet.BlockPublish.Block)
-							//TODO: check if need to clean transaction
-							gos.currentBlock.SafeClean()
-							//TODO: Make the funcking print correct
-							fmt.Println("CHAIN", bHash)
-						}
-					}*/
+				}
+			} else if packet.BlockPublish != nil {
+				fmt.Println("NEW BLOCK PUBLISH")
+				bHash := packet.BlockPublish.Block.Hash()
+				if gos.chain.ParentSeen(&packet.BlockPublish.Block) {
+					if bHash[0] == 0 && bHash[1] == 0 {
+						gos.chain.SafeUpdateChain(&packet.BlockPublish.Block)
+						fmt.Println("CHAIN", gos.chain.GetChainPrint())
+						gos.currentBlock.SafeClean()
+					}
+				}
 			} else { //Should never happen!
 				fmt.Println("Error: MESSAGE FORM UNKNOWN. Sent by", relayAddr)
 			}
@@ -529,7 +530,6 @@ func (gos *Gossiper) Hello() {
 /*Mine is the Mining function for the gossiper*/
 func (gos *Gossiper) Mine() {
 	for {
-		fmt.Println("MINING")
 		gos.currentBlock.mux.Lock()
 		if gos.currentBlock.b == nil {
 			gos.currentBlock.b = &messages.Block{Transactions: make([]messages.TxPublish, 0)}
@@ -539,16 +539,20 @@ func (gos *Gossiper) Mine() {
 
 		gos.currentBlock.SafeUpdateNonce()
 		bHash := gos.currentBlock.SafeHash()
-		if bHash[31] == 0 && bHash[30] == 0 {
+		if bHash[0] == 0 && bHash[1] == 0 {
 			fmt.Println("FOUND-BLOCK", hex.EncodeToString(bHash[:]))
 			gos.currentBlock.mux.RLock()
 			packet := messages.GossipPacket{BlockPublish: &messages.BlockPublish{
 				Block:    *gos.currentBlock.b,
 				HopLimit: 20}}
+			gos.currentBlock.mux.RUnlock()
+			gos.chain.SafeUpdateChain(&packet.BlockPublish.Block)
+			fmt.Println("CHAIN", gos.chain.GetChainPrint())
 			serializedPacket, err := protobuf.Encode(&packet)
 			errorhandler.CheckErr(err, "Error when encoding packet: ", false)
 			gos.sendToAll(serializedPacket, []string{})
 			gos.currentBlock.SafeClean()
+			time.Sleep(5 * time.Second)
 		}
 	}
 }
