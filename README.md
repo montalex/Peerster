@@ -2,7 +2,7 @@
 
 Gossip application for the Decentralized Systems Engineering class at EPFL
 
-Simple UDP communication app using a gossip algorithm and a web interface for clients.
+Simple Golang UDP communication app using a gossip algorithm and a web interface for clients.
 
 To use the web interface, start the program with the argument -web=true and open your browser at the address: localhost:8080.
 To index a file in the GUI, enter the filename in the input box and click Index (file has to be in _SharedFiles)
